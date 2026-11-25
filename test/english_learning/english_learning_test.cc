@@ -51,6 +51,7 @@ struct Recorder {
     std::vector<std::string> texts;
     std::vector<bool> listening;
     std::vector<bool> suppress;
+    std::vector<std::string> idles;
     bool suppress_now = false;
 
     void Clear() {
@@ -59,6 +60,7 @@ struct Recorder {
         texts.clear();
         listening.clear();
         suppress.clear();
+        idles.clear();
     }
 };
 
@@ -77,6 +79,7 @@ void InstallHooks() {
         g_rec.suppress.push_back(suppress);
         g_rec.suppress_now = suppress;
     };
+    hooks.set_idle = [](const std::string& text) { g_rec.idles.push_back(text); };
     EnglishLearning::GetInstance().SetHooks(std::move(hooks));
 }
 
@@ -163,7 +166,7 @@ void TestFullScript() {
     CHECK(g_rec.cards[0].word_count == 18);
     CHECK(std::string(g_rec.cards[0].word) == "afternoon");
     CHECK(std::string(g_rec.cards[0].zh) == "下午");
-    CHECK(std::string(g_rec.cards[0].spell) == "A-F-T-E-R-N-O-O-N");
+    CHECK(std::string(g_rec.cards[0].spell) == "a-f-t-e-r-n-o-o-n");
     CHECK(!g_rec.cards[0].is_last);
     // 播报顺序：词 -> 拼写 -> 中文
     CHECK(g_rec.played.size() == 1);
@@ -250,12 +253,14 @@ void TestFullScript() {
     CHECK(el.state() == State::kIdle);
     // 结束语还在放，先不急着放服务端
 
-    // 9) 结束语放完 -> 回到聆听，且不再屏蔽服务端
+    // 9) 结束语放完 -> 回到待机（等唤醒词），且不再屏蔽服务端
     g_rec.Clear();
     Drain();
     CHECK(g_rec.played.empty());
-    CHECK(g_rec.listening.size() == 1);
-    CHECK(g_rec.listening.back());
+    CHECK(g_rec.idles.size() == 1);
+    CHECK(g_rec.idles.back() == "本单元单词学习结束");
+    // 待机态不应该继续聆听，要等用户说唤醒词
+    CHECK(g_rec.listening.empty());
     CHECK(!g_rec.suppress_now);
 
     // 10) 「结束学习」在空闲状态下不该被接管
@@ -273,7 +278,13 @@ void TestExitRestoresServer() {
     CHECK(el.HandleUserText("结束学习"));
     CHECK(el.state() == State::kIdle);
     CHECK(!g_rec.suppress_now);
-    CHECK(g_rec.listening.back());
+    // 主动退出：播一句收尾提示，然后回到待机（等唤醒词）
+    CHECK(g_rec.played.back() == "prompt_exit.ogg");
+    g_rec.Clear();
+    Drain();
+    CHECK(g_rec.idles.size() == 1);
+    CHECK(g_rec.idles.back() == "已结束英语学习");
+    CHECK(g_rec.listening.empty());
 }
 
 void TestQuestionHandsBackToServer() {
@@ -286,10 +297,12 @@ void TestQuestionHandsBackToServer() {
     CHECK(el.HandleUserText("第三单元"));
     CHECK(el.state() == State::kStudying);
 
-    // 问了个问题 -> 交回服务端
+    // 问了个问题 -> 交回服务端：不能进待机，否则服务端的回答会被丢掉
     CHECK(!el.HandleUserText("今天天气怎么样"));
     CHECK(el.state() == State::kIdle);
     CHECK(!g_rec.suppress_now);
+    CHECK(g_rec.idles.empty());
+    CHECK(g_rec.listening.back());
 }
 
 void TestListUnits() {

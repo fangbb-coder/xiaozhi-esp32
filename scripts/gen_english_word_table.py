@@ -14,9 +14,9 @@
       en_u{unit}_w{idx}.ogg        单词发音
       en_u{unit}_w{idx}_spell.ogg  逐字母拼读
       zh_u{unit}_w{idx}.ogg        汉语意思
-* `spell` 是给屏幕看的「字母拆解」串：大写 + 连字符，词与词之间用空格
-  例：playground -> P-L-A-Y-G-R-O-U-N-D
-      office worker -> O-F-F-I-C-E W-O-R-K-E-R
+* `spell` 是给屏幕看的「字母拆解」串：小写 + 连字符，词与词之间用空格
+  例：playground -> p-l-a-y-g-r-o-u-n-d
+      office worker -> o-f-f-i-c-e w-o-r-k-e-r
 """
 from __future__ import annotations
 
@@ -36,12 +36,12 @@ _KEEP = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-'")
 
 
 def spell_out(word: str) -> str:
-    """把单词拆成逐字母形式：playground -> P-L-A-Y-G-R-O-U-N-D"""
+    """把单词拆成逐字母形式：playground -> p-l-a-y-g-r-o-u-n-d（全小写）"""
     parts = []
     for token in word.split():
         letters = [c for c in token if c in _KEEP]
         if letters:
-            parts.append("-".join(ch.upper() for ch in letters))
+            parts.append("-".join(ch.lower() for ch in letters))
     return " ".join(parts)
 
 

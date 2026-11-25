@@ -87,10 +87,6 @@ endfunction()
 set(BUILTIN_TEXT_FONT font_noto_sans_basic_14_1)
 set(BUILTIN_ICON_FONT font_material_symbols_14_1)
 
-# Font used for the English learning study card. The English word is the hero
-# element on that screen, so it gets a larger latin font than the chat text.
-set(BUILTIN_STUDY_FONT font_noto_sans_basic_30_4)
-
 set(EMOTE_RESOLUTION "320_240")
 
 # Select the board source directory from Kconfig
@@ -1234,6 +1230,11 @@ if(CONFIG_ENGLISH_LEARNING_ENABLED)
         "english_learning/english_learning.cc"
         "english_learning/english_audio.cc"
         "english_learning/intent_parser.cc"
+        # 单词卡专用字体：字符集按词表裁剪，字号由 tools/gen_study_fonts.py 实测确定
+        "english_learning/fonts/font_study_latin_30.c"
+        "english_learning/fonts/font_study_latin_40.c"
+        "english_learning/fonts/font_study_latin_26.c"
+        "english_learning/fonts/font_study_cjk_48.c"
     )
     list(APPEND INCLUDE_DIRS "english_learning")
 endif()
@@ -1305,9 +1306,6 @@ if(NOT CMAKE_BUILD_EARLY_EXPANSION)
                         PRIVATE BUILTIN_TEXT_FONT=${BUILTIN_TEXT_FONT} BUILTIN_ICON_FONT=${BUILTIN_ICON_FONT}
                         PRIVATE TEXT_FONT_SIZE=${TEXT_FONT_SIZE} TEXT_FONT_BPP=${TEXT_FONT_BPP}
                         )
-    if(CONFIG_ENGLISH_LEARNING_ENABLED)
-        target_compile_definitions(${COMPONENT_LIB} PRIVATE BUILTIN_STUDY_FONT=${BUILTIN_STUDY_FONT})
-    endif()
     # ESP32-S3 LVGL builtin pool: PSRAM boards allocate it from PSRAM.
     # Boards that set CONFIG_SPIRAM=n must not keep the 1MB chip-default
     # pool as a .dram0.bss array (build.py also switches those variants

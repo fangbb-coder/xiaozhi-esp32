@@ -1579,6 +1579,21 @@ void Application::InitializeEnglishLearning() {
         local_learning_active_ = suppress;
         ESP_LOGI(TAG, "server speech %s", suppress ? "suppressed" : "restored");
     };
+    hooks.set_idle = [this](const std::string& text) {
+        auto display = Board::GetInstance().GetDisplay();
+        // 收起全屏单词卡，回到普通界面
+        display->HideStudyCard();
+        // kDeviceStateIdle 会打开唤醒词检测、关掉语音处理，也就是「等唤醒」
+        if (GetDeviceState() != kDeviceStateIdle) {
+            SetDeviceState(kDeviceStateIdle);
+        }
+        if (!text.empty()) {
+            // 待机状态会清空聊天区，所以等状态切换生效之后再把这句话放回去
+            Schedule([text]() {
+                Board::GetInstance().GetDisplay()->SetChatMessage("assistant", text.c_str());
+            });
+        }
+    };
     learning.SetHooks(std::move(hooks));
 
     // Tell the user right away if the pre-generated audio did not make it into

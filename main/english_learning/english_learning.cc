@@ -157,7 +157,8 @@ bool EnglishLearning::HandleUserText(const std::string& text) {
 
         case Intent::kExit:
             if (state_ != State::kIdle) {
-                Exit();
+                // 用户说「退出」→ 收尾后回到待机，等唤醒词
+                Exit(true);
                 return true;
             }
             return false;
@@ -182,7 +183,8 @@ bool EnglishLearning::HandleUserText(const std::string& text) {
     if (state_ == State::kStudying && LooksLikeQuestion(text)) {
         // 用户改问别的了，把这一轮交回服务端
         ESP_LOGI(TAG, "question detected, handing the turn back to the server");
-        Exit();
+        // 交回服务端：不能进待机，否则服务端的回答会被丢掉
+        Exit(false);
         return false;
     }
 
@@ -256,8 +258,8 @@ void EnglishLearning::FinishUnit() {
     EnqueueAndPlay({kPromptUnitDone}, AfterPlayback::kUnitFinished);
 }
 
-void EnglishLearning::Exit() {
-    ESP_LOGI(TAG, "exit learning mode");
+void EnglishLearning::Exit(bool to_idle) {
+    ESP_LOGI(TAG, "exit learning mode (to_idle=%d)", to_idle ? 1 : 0);
     pending_.clear();
     step_ = 0;
     awaiting_drain_ = false;
@@ -266,6 +268,15 @@ void EnglishLearning::Exit() {
     if (hooks_.suppress_server_speech) {
         hooks_.suppress_server_speech(false);
     }
+    if (to_idle) {
+        // 用户主动退出：收掉卡片，播一句收尾提示，然后回到待机等唤醒词
+        if (hooks_.show_text) {
+            hooks_.show_text("已结束英语学习");
+        }
+        EnqueueAndPlay({kPromptExit}, AfterPlayback::kExitFinished);
+        return;
+    }
+    // 用户改问别的了：这一轮必须交回服务端，否则对方等不到回答
     if (hooks_.show_text) {
         hooks_.show_text("已结束英语学习");
     }
@@ -348,11 +359,19 @@ void EnglishLearning::HandleAfterPlayback() {
             AfterWord();
             break;
         case AfterPlayback::kUnitFinished:
-            // 本单元学完，交回普通对话
+            // 本单元学完：回到待机状态，等用户说唤醒词再开始下一轮
             if (hooks_.suppress_server_speech) {
                 hooks_.suppress_server_speech(false);
             }
-            ResumeListening();
+            if (hooks_.set_idle) {
+                hooks_.set_idle("本单元单词学习结束");
+            }
+            break;
+        case AfterPlayback::kExitFinished:
+            // 用户主动退出：同样回到待机状态
+            if (hooks_.set_idle) {
+                hooks_.set_idle("已结束英语学习");
+            }
             break;
         case AfterPlayback::kNone:
         default:

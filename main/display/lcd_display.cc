@@ -24,7 +24,12 @@
 LV_FONT_DECLARE(BUILTIN_TEXT_FONT);
 LV_FONT_DECLARE(BUILTIN_ICON_FONT);
 #if CONFIG_ENGLISH_LEARNING_ENABLED
-LV_FONT_DECLARE(BUILTIN_STUDY_FONT);
+// 学习卡片专用字体（由 tools/gen_study_fonts.py 生成，字符集按词表裁剪）
+// 标题 30px / 单词 40px / 拼读 26px / 汉语 48px，字号由脚本实测字宽后确定。
+LV_FONT_DECLARE(font_study_latin_30);
+LV_FONT_DECLARE(font_study_latin_40);
+LV_FONT_DECLARE(font_study_latin_26);
+LV_FONT_DECLARE(font_study_cjk_48);
 #endif
 LV_FONT_DECLARE(font_material_symbols_30_4);
 LV_FONT_DECLARE(font_noto_emoji_30_4);
@@ -1209,11 +1214,22 @@ void LcdDisplay::CreateStudyCard() {
     if (lvgl_theme->text_font() == nullptr) {
         return;
     }
+#if !CONFIG_ENGLISH_LEARNING_ENABLED
+    // 学习卡片有自己的字体，这里只是给其它构建路径留的退路。
     auto text_font = lvgl_theme->text_font()->font();
+#endif
 
     auto screen = lv_screen_active();
 
-    /* Full screen card for the English learning extension */
+    /*
+     * Full screen card for the English learning extension.
+     *
+     * The card itself is only the background. The four lines live in a
+     * container whose height follows its content, and that container is
+     * centred on the screen. A line that is longer than the screen grows
+     * the block instead of pushing the last line out of view - that is what
+     * used to cut the Chinese meaning in half.
+     */
     study_card_ = lv_obj_create(screen);
     lv_obj_set_size(study_card_, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_style_radius(study_card_, 0, 0);
@@ -1221,46 +1237,77 @@ void LcdDisplay::CreateStudyCard() {
     lv_obj_set_style_pad_all(study_card_, 0, 0);
     lv_obj_set_style_bg_color(study_card_, lvgl_theme->background_color(), 0);
     lv_obj_set_style_bg_opa(study_card_, LV_OPA_COVER, 0);
-    lv_obj_set_flex_flow(study_card_, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(study_card_, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
-                          LV_FLEX_ALIGN_CENTER);
     lv_obj_set_scrollbar_mode(study_card_, LV_SCROLLBAR_MODE_OFF);
     lv_obj_remove_flag(study_card_, LV_OBJ_FLAG_SCROLLABLE);
 
+    study_content_ = lv_obj_create(study_card_);
+    lv_obj_set_size(study_content_, LV_HOR_RES, LV_SIZE_CONTENT);
+    lv_obj_center(study_content_);
+    lv_obj_set_style_radius(study_content_, 0, 0);
+    lv_obj_set_style_border_width(study_content_, 0, 0);
+    lv_obj_set_style_pad_all(study_content_, 0, 0);
+    /* 行距：四行文字共 144px，加 3 个 16px 行距 = 192px，屏幕 240px，上下各留 24px。 */
+    lv_obj_set_style_pad_row(study_content_, 16, 0);
+    lv_obj_set_style_bg_opa(study_content_, LV_OPA_TRANSP, 0);
+    lv_obj_set_flex_flow(study_content_, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(study_content_, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_scrollbar_mode(study_content_, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_remove_flag(study_content_, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* All four lines share the same width so the text stays centred. */
+    const int line_width = LV_HOR_RES - lvgl_theme->spacing(8);
+
     /* Line 1: unit and progress */
-    study_unit_label_ = lv_label_create(study_card_);
-    lv_obj_set_width(study_unit_label_, LV_HOR_RES - lvgl_theme->spacing(8));
+    study_unit_label_ = lv_label_create(study_content_);
+    lv_obj_set_width(study_unit_label_, line_width);
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    lv_obj_set_style_text_font(study_unit_label_, &font_study_latin_30, 0);
+#else
     lv_obj_set_style_text_font(study_unit_label_, text_font, 0);
+#endif
     lv_obj_set_style_text_color(study_unit_label_, lvgl_theme->text_color(), 0);
     lv_obj_set_style_text_align(study_unit_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(study_unit_label_, LV_LABEL_LONG_WRAP);
     lv_label_set_text(study_unit_label_, "");
 
     /* Line 2: the English word, the big one */
-    study_word_label_ = lv_label_create(study_card_);
-    lv_obj_set_width(study_word_label_, LV_HOR_RES - lvgl_theme->spacing(8));
+    study_word_label_ = lv_label_create(study_content_);
+    lv_obj_set_width(study_word_label_, line_width);
 #if CONFIG_ENGLISH_LEARNING_ENABLED
-    lv_obj_set_style_text_font(study_word_label_, &BUILTIN_STUDY_FONT, 0);
+    lv_obj_set_style_text_font(study_word_label_, &font_study_latin_40, 0);
 #else
     lv_obj_set_style_text_font(study_word_label_, text_font, 0);
 #endif
     lv_obj_set_style_text_color(study_word_label_, lvgl_theme->text_color(), 0);
     lv_obj_set_style_text_align(study_word_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(study_word_label_, LV_LABEL_LONG_WRAP);
     lv_label_set_text(study_word_label_, "");
 
     /* Line 3: letter by letter spelling */
-    study_spell_label_ = lv_label_create(study_card_);
-    lv_obj_set_width(study_spell_label_, LV_HOR_RES - lvgl_theme->spacing(8));
+    study_spell_label_ = lv_label_create(study_content_);
+    lv_obj_set_width(study_spell_label_, line_width);
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    lv_obj_set_style_text_font(study_spell_label_, &font_study_latin_26, 0);
+#else
     lv_obj_set_style_text_font(study_spell_label_, text_font, 0);
+#endif
     lv_obj_set_style_text_color(study_spell_label_, lvgl_theme->text_color(), 0);
     lv_obj_set_style_text_align(study_spell_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(study_spell_label_, LV_LABEL_LONG_WRAP);
     lv_label_set_text(study_spell_label_, "");
 
     /* Line 4: Chinese meaning */
-    study_zh_label_ = lv_label_create(study_card_);
-    lv_obj_set_width(study_zh_label_, LV_HOR_RES - lvgl_theme->spacing(8));
+    study_zh_label_ = lv_label_create(study_content_);
+    lv_obj_set_width(study_zh_label_, line_width);
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    lv_obj_set_style_text_font(study_zh_label_, &font_study_cjk_48, 0);
+#else
     lv_obj_set_style_text_font(study_zh_label_, text_font, 0);
+#endif
     lv_obj_set_style_text_color(study_zh_label_, lvgl_theme->text_color(), 0);
     lv_obj_set_style_text_align(study_zh_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(study_zh_label_, LV_LABEL_LONG_WRAP);
     lv_label_set_text(study_zh_label_, "");
 
     lv_obj_add_flag(study_card_, LV_OBJ_FLAG_HIDDEN);

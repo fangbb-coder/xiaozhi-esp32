@@ -76,6 +76,13 @@ public:
         std::function<void(bool start)> set_listening;
         /** 屏蔽 / 恢复服务端播报（本地教学期间服务端不要插话） */
         std::function<void(bool suppress)> suppress_server_speech;
+        /**
+         * @brief 回到待机状态（等待唤醒词）
+         *
+         * 设备端实现必须在状态切换生效之后再显示 text，因为待机状态会清空
+         * 聊天区，提前显示会被擦掉。
+         */
+        std::function<void(const std::string& text)> set_idle;
     };
 
     void SetHooks(Hooks hooks);
@@ -98,8 +105,12 @@ public:
     std::vector<UnitSummary> ListUnits() const;
     std::string ListUnitsText() const;
 
-    /** 退出教学模式，回到正常对话 */
-    void Exit();
+    /**
+     * @brief 退出教学模式
+     * @param to_idle true=播一句收尾提示后回到待机状态（等唤醒词）；
+                 false=把这一轮交回服务端继续回答
+     */
+    void Exit(bool to_idle);
 
 private:
     EnglishLearning() = default;
@@ -110,6 +121,7 @@ private:
         kPromptFinished, /**< 一条提示语播完了 */
         kWordFinished,   /**< 一个词的三段播完了 */
         kUnitFinished,   /**< 单元结束语播完了 */
+        kExitFinished,   /**< 退出提示语播完了 */
     };
 
     void EnqueueAndPlay(std::vector<std::string> items, AfterPlayback after);

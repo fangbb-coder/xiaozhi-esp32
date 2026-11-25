@@ -36,6 +36,9 @@ protected:
 
     // Study card for the local English learning extension. Created on demand.
     lv_obj_t* study_card_ = nullptr;
+    // Content container inside the card: height follows the text and is centered,
+    // so a long line can never push the bottom line off the screen.
+    lv_obj_t* study_content_ = nullptr;
     lv_obj_t* study_unit_label_ = nullptr;
     lv_obj_t* study_word_label_ = nullptr;
     lv_obj_t* study_spell_label_ = nullptr;
