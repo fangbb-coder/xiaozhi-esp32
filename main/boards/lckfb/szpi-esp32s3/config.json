@@ -8,6 +8,23 @@
             "sdkconfig_append": [
                 "CONFIG_USE_DEVICE_AEC=y"
             ]
+        },
+        {
+            "name": "lichuang-dev-ble",
+            "sdkconfig_append": [
+                "CONFIG_USE_DEVICE_AEC=y",
+                "CONFIG_BLE_ARRIVAL_ENABLED=y",
+                "CONFIG_BT_ENABLED=y",
+                "CONFIG_BT_BLUEDROID_ENABLED=y",
+                "CONFIG_BT_CONTROLLER_ENABLED=y"
+            ]
+        },
+        {
+            "name": "lichuang-dev-english",
+            "sdkconfig_append": [
+                "CONFIG_USE_DEVICE_AEC=y",
+                "CONFIG_ENGLISH_LEARNING_ENABLED=y"
+            ]
         }
     ]
 }

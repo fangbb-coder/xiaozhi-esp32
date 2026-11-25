@@ -34,8 +34,17 @@ protected:
     std::unique_ptr<LvglImage> preview_image_cached_ = nullptr;
     bool hide_subtitle_ = false;  // Control whether to hide chat messages/subtitles
 
+    // Study card for the local English learning extension. Created on demand.
+    lv_obj_t* study_card_ = nullptr;
+    lv_obj_t* study_unit_label_ = nullptr;
+    lv_obj_t* study_word_label_ = nullptr;
+    lv_obj_t* study_spell_label_ = nullptr;
+    lv_obj_t* study_zh_label_ = nullptr;
+
     void InitializeLcdThemes();
     void ShowEmotion();
+    // Must be called with the display lock held.
+    void CreateStudyCard();
     virtual bool Lock(int timeout_ms = 0) override;
     virtual void Unlock() override;
 
@@ -48,6 +57,9 @@ public:
     ~LcdDisplay();
     virtual bool SetEmotion(const char* emotion) override;
     virtual void SetChatMessage(const char* role, const char* content) override;
+    virtual void ShowStudyCard(int unit, int index, int word_count, const char* word,
+                               const char* spell, const char* zh) override;
+    virtual void HideStudyCard() override;
     virtual void RemoveChatMessage(const char* role, const char* content) override;
     virtual void ClearChatMessages() override;
     virtual void SetPreviewImage(std::unique_ptr<LvglImage> image) override;

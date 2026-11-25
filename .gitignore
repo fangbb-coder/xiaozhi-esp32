@@ -11,6 +11,8 @@ dependencies.lock
 .env
 releases/
 main/assets/lang_config.h
+main/english_learning/word_table.h
+main/english_learning/english_audio_table.h
 main/mmap_generate_emoji.h
 .DS_Store
 .cache

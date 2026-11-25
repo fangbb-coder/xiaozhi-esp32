@@ -13,6 +13,7 @@
 #include <noto_emoji.h>
 #include <src/misc/cache/lv_cache.h>
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <vector>
 
@@ -22,6 +23,9 @@
 
 LV_FONT_DECLARE(BUILTIN_TEXT_FONT);
 LV_FONT_DECLARE(BUILTIN_ICON_FONT);
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+LV_FONT_DECLARE(BUILTIN_STUDY_FONT);
+#endif
 LV_FONT_DECLARE(font_material_symbols_30_4);
 LV_FONT_DECLARE(font_noto_emoji_30_4);
 
@@ -1193,6 +1197,105 @@ void LcdDisplay::ClearChatMessages() {
     }
 }
 #endif
+
+void LcdDisplay::CreateStudyCard() {
+    if (study_card_ != nullptr) {
+        return;
+    }
+    if (current_theme_ == nullptr) {
+        return;
+    }
+    auto lvgl_theme = static_cast<LvglTheme*>(current_theme_);
+    if (lvgl_theme->text_font() == nullptr) {
+        return;
+    }
+    auto text_font = lvgl_theme->text_font()->font();
+
+    auto screen = lv_screen_active();
+
+    /* Full screen card for the English learning extension */
+    study_card_ = lv_obj_create(screen);
+    lv_obj_set_size(study_card_, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_style_radius(study_card_, 0, 0);
+    lv_obj_set_style_border_width(study_card_, 0, 0);
+    lv_obj_set_style_pad_all(study_card_, 0, 0);
+    lv_obj_set_style_bg_color(study_card_, lvgl_theme->background_color(), 0);
+    lv_obj_set_style_bg_opa(study_card_, LV_OPA_COVER, 0);
+    lv_obj_set_flex_flow(study_card_, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(study_card_, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_scrollbar_mode(study_card_, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_remove_flag(study_card_, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* Line 1: unit and progress */
+    study_unit_label_ = lv_label_create(study_card_);
+    lv_obj_set_width(study_unit_label_, LV_HOR_RES - lvgl_theme->spacing(8));
+    lv_obj_set_style_text_font(study_unit_label_, text_font, 0);
+    lv_obj_set_style_text_color(study_unit_label_, lvgl_theme->text_color(), 0);
+    lv_obj_set_style_text_align(study_unit_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(study_unit_label_, "");
+
+    /* Line 2: the English word, the big one */
+    study_word_label_ = lv_label_create(study_card_);
+    lv_obj_set_width(study_word_label_, LV_HOR_RES - lvgl_theme->spacing(8));
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    lv_obj_set_style_text_font(study_word_label_, &BUILTIN_STUDY_FONT, 0);
+#else
+    lv_obj_set_style_text_font(study_word_label_, text_font, 0);
+#endif
+    lv_obj_set_style_text_color(study_word_label_, lvgl_theme->text_color(), 0);
+    lv_obj_set_style_text_align(study_word_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(study_word_label_, "");
+
+    /* Line 3: letter by letter spelling */
+    study_spell_label_ = lv_label_create(study_card_);
+    lv_obj_set_width(study_spell_label_, LV_HOR_RES - lvgl_theme->spacing(8));
+    lv_obj_set_style_text_font(study_spell_label_, text_font, 0);
+    lv_obj_set_style_text_color(study_spell_label_, lvgl_theme->text_color(), 0);
+    lv_obj_set_style_text_align(study_spell_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(study_spell_label_, "");
+
+    /* Line 4: Chinese meaning */
+    study_zh_label_ = lv_label_create(study_card_);
+    lv_obj_set_width(study_zh_label_, LV_HOR_RES - lvgl_theme->spacing(8));
+    lv_obj_set_style_text_font(study_zh_label_, text_font, 0);
+    lv_obj_set_style_text_color(study_zh_label_, lvgl_theme->text_color(), 0);
+    lv_obj_set_style_text_align(study_zh_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(study_zh_label_, "");
+
+    lv_obj_add_flag(study_card_, LV_OBJ_FLAG_HIDDEN);
+}
+
+void LcdDisplay::ShowStudyCard(int unit, int index, int word_count, const char* word,
+                               const char* spell, const char* zh) {
+    if (!SupportsGuiOperations() || !setup_ui_called_) {
+        ESP_LOGW(TAG, "ShowStudyCard() called before SetupUI()");
+        return;
+    }
+    DisplayLockGuard lock(this);
+    CreateStudyCard();
+    if (study_card_ == nullptr) {
+        return;
+    }
+
+    char header[48];
+    snprintf(header, sizeof(header), "Unit %d    %d / %d", unit, index + 1, word_count);
+    lv_label_set_text(study_unit_label_, header);
+    lv_label_set_text(study_word_label_, word != nullptr ? word : "");
+    lv_label_set_text(study_spell_label_, spell != nullptr ? spell : "");
+    lv_label_set_text(study_zh_label_, zh != nullptr ? zh : "");
+
+    lv_obj_remove_flag(study_card_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(study_card_);
+}
+
+void LcdDisplay::HideStudyCard() {
+    if (study_card_ == nullptr) {
+        return;
+    }
+    DisplayLockGuard lock(this);
+    lv_obj_add_flag(study_card_, LV_OBJ_FLAG_HIDDEN);
+}
 
 bool LcdDisplay::SetEmotion(const char* emotion) {
     if (!setup_ui_called_) {

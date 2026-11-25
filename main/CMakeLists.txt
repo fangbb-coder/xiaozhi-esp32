@@ -87,6 +87,10 @@ endfunction()
 set(BUILTIN_TEXT_FONT font_noto_sans_basic_14_1)
 set(BUILTIN_ICON_FONT font_material_symbols_14_1)
 
+# Font used for the English learning study card. The English word is the hero
+# element on that screen, so it gets a larger latin font than the chat text.
+set(BUILTIN_STUDY_FONT font_noto_sans_basic_30_4)
+
 set(EMOTE_RESOLUTION "320_240")
 
 # Select the board source directory from Kconfig
@@ -1198,8 +1202,44 @@ endif()
 if(IDF_TARGET STREQUAL "esp32s3")
     list(APPEND MAIN_PRIV_REQUIRES_EXTRA esp_driver_usb_serial_jtag)
 endif()
+
+# BLE 门口迎宾（BLE arrival detection）
+# 独立的可选功能：只有打开 CONFIG_BLE_ARRIVAL_ENABLED 才会编进来，
+# 这样不开这个功能的板子不会平白多背一份蓝牙栈的 RAM/Flash 开销。
+if(CONFIG_BLE_ARRIVAL_ENABLED)
+    list(APPEND SOURCES
+        "ble_arrival/arrival_detector.c"
+        "ble_arrival/arrival_target.cc"
+        "ble_arrival/ble_arrival_monitor.cc"
+        "ble_arrival/ble_arrival_web.cc"
+    )
+    list(APPEND INCLUDE_DIRS "ble_arrival")
+    list(APPEND MAIN_PRIV_REQUIRES_EXTRA
+        esp_http_server
+        esp_wifi
+    )
+endif()
+
+# English word learning extension. The audio is compiled into the app partition,
+# which costs roughly 600 KB, so it stays opt-in per board.
+if(CONFIG_ENGLISH_LEARNING_ENABLED)
+    file(GLOB ENGLISH_AUDIO_FILES ${CMAKE_CURRENT_SOURCE_DIR}/assets/english/*.ogg)
+    list(LENGTH ENGLISH_AUDIO_FILES ENGLISH_AUDIO_COUNT)
+    if(ENGLISH_AUDIO_COUNT EQUAL 0)
+        message(FATAL_ERROR
+            "CONFIG_ENGLISH_LEARNING_ENABLED is on but no audio was found in assets/english")
+    endif()
+    message(STATUS "English learning audio: ${ENGLISH_AUDIO_COUNT} files")
+    list(APPEND SOURCES
+        "english_learning/english_learning.cc"
+        "english_learning/english_audio.cc"
+        "english_learning/intent_parser.cc"
+    )
+    list(APPEND INCLUDE_DIRS "english_learning")
+endif()
+
 idf_component_register(SRCS ${SOURCES}
-                    EMBED_FILES ${LANG_SOUNDS} ${COMMON_SOUNDS}
+                    EMBED_FILES ${LANG_SOUNDS} ${COMMON_SOUNDS} ${ENGLISH_AUDIO_FILES}
                     INCLUDE_DIRS ${INCLUDE_DIRS}
                     WHOLE_ARCHIVE
                     PRIV_REQUIRES
@@ -1265,6 +1305,9 @@ if(NOT CMAKE_BUILD_EARLY_EXPANSION)
                         PRIVATE BUILTIN_TEXT_FONT=${BUILTIN_TEXT_FONT} BUILTIN_ICON_FONT=${BUILTIN_ICON_FONT}
                         PRIVATE TEXT_FONT_SIZE=${TEXT_FONT_SIZE} TEXT_FONT_BPP=${TEXT_FONT_BPP}
                         )
+    if(CONFIG_ENGLISH_LEARNING_ENABLED)
+        target_compile_definitions(${COMPONENT_LIB} PRIVATE BUILTIN_STUDY_FONT=${BUILTIN_STUDY_FONT})
+    endif()
     # ESP32-S3 LVGL builtin pool: PSRAM boards allocate it from PSRAM.
     # Boards that set CONFIG_SPIRAM=n must not keep the 1MB chip-default
     # pool as a .dram0.bss array (build.py also switches those variants
@@ -1301,6 +1344,41 @@ add_custom_command(
 add_custom_target(lang_header ALL
     DEPENDS ${LANG_HEADER}
 )
+
+# English learning tables. Both headers hold flash-resident data and are
+# regenerated from the word list and the audio files on every build, so they
+# never drift away from the data they describe.
+if(CONFIG_ENGLISH_LEARNING_ENABLED)
+    set(ENGLISH_WORD_TABLE "${CMAKE_CURRENT_SOURCE_DIR}/english_learning/word_table.h")
+    set(ENGLISH_AUDIO_TABLE "${CMAKE_CURRENT_SOURCE_DIR}/english_learning/english_audio_table.h")
+    set(ENGLISH_WORDS_JSON "${CMAKE_CURRENT_SOURCE_DIR}/english_learning/pep4a_words.json")
+
+    add_custom_command(
+        OUTPUT ${ENGLISH_WORD_TABLE}
+        COMMAND python ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_english_word_table.py
+                --data "${ENGLISH_WORDS_JSON}"
+                --out "${ENGLISH_WORD_TABLE}"
+        DEPENDS ${ENGLISH_WORDS_JSON}
+                ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_english_word_table.py
+        COMMENT "Generating English learning word table"
+    )
+
+    add_custom_command(
+        OUTPUT ${ENGLISH_AUDIO_TABLE}
+        COMMAND python ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_english_audio_index.py
+                --assets "${CMAKE_CURRENT_SOURCE_DIR}/assets/english"
+                --output "${ENGLISH_AUDIO_TABLE}"
+        DEPENDS ${ENGLISH_AUDIO_FILES}
+                ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_english_audio_index.py
+        COMMENT "Generating English learning audio index"
+    )
+
+    add_custom_target(english_learning_tables ALL
+        DEPENDS ${ENGLISH_WORD_TABLE} ${ENGLISH_AUDIO_TABLE}
+    )
+    # Make sure the tables exist before the component compiles.
+    add_dependencies(${COMPONENT_LIB} english_learning_tables)
+endif()
 
 # Find ESP-SR component dynamically
 find_component_by_pattern("espressif__esp-sr" ESP_SR_COMPONENT ESP_SR_COMPONENT_PATH)
