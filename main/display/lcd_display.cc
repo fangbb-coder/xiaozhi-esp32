@@ -1224,34 +1224,30 @@ void LcdDisplay::CreateStudyCard() {
     /*
      * Full screen card for the English learning extension.
      *
-     * The card itself is only the background. The four lines live in a
-     * container whose height follows its content, and that container is
-     * centred on the screen. A line that is longer than the screen grows
-     * the block instead of pushing the last line out of view - that is what
-     * used to cut the Chinese meaning in half.
+     * 配色写死成白底黑字，不跟随主题：深色主题下背景会变成黑色，整屏看着像黑屏。
+     *
+     * 四行用绝对定位，不用 flex + LV_SIZE_CONTENT：flex 容器的自动高度要等子对象
+     * 布局完才算得准，算不准时整块内容会被裁掉，表现就是「屏上一个字都没有」。
+     * 四行的行高是已知的（30/40/26/48px 字体对应 31/41/25/47px），直接算好 y 偏移即可。
      */
     study_card_ = lv_obj_create(screen);
     lv_obj_set_size(study_card_, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_style_radius(study_card_, 0, 0);
     lv_obj_set_style_border_width(study_card_, 0, 0);
     lv_obj_set_style_pad_all(study_card_, 0, 0);
-    lv_obj_set_style_bg_color(study_card_, lvgl_theme->background_color(), 0);
+    lv_obj_set_style_shadow_width(study_card_, 0, 0);
+    lv_obj_set_style_bg_color(study_card_, lv_color_hex(0xFFFFFF), 0);
     lv_obj_set_style_bg_opa(study_card_, LV_OPA_COVER, 0);
-    lv_obj_set_scrollbar_mode(study_card_, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_style_scrollbar_mode(study_card_, LV_SCROLLBAR_MODE_OFF);
     lv_obj_remove_flag(study_card_, LV_OBJ_FLAG_SCROLLABLE);
 
     study_content_ = lv_obj_create(study_card_);
-    lv_obj_set_size(study_content_, LV_HOR_RES, LV_SIZE_CONTENT);
-    lv_obj_center(study_content_);
+    lv_obj_set_size(study_content_, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_style_radius(study_content_, 0, 0);
     lv_obj_set_style_border_width(study_content_, 0, 0);
     lv_obj_set_style_pad_all(study_content_, 0, 0);
-    /* 行距：四行文字共 144px，加 3 个 16px 行距 = 192px，屏幕 240px，上下各留 24px。 */
-    lv_obj_set_style_pad_row(study_content_, 16, 0);
+    lv_obj_set_style_shadow_width(study_content_, 0, 0);
     lv_obj_set_style_bg_opa(study_content_, LV_OPA_TRANSP, 0);
-    lv_obj_set_flex_flow(study_content_, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(study_content_, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
-                          LV_FLEX_ALIGN_CENTER);
     lv_obj_set_scrollbar_mode(study_content_, LV_SCROLLBAR_MODE_OFF);
     lv_obj_remove_flag(study_content_, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -1266,9 +1262,11 @@ void LcdDisplay::CreateStudyCard() {
 #else
     lv_obj_set_style_text_font(study_unit_label_, text_font, 0);
 #endif
-    lv_obj_set_style_text_color(study_unit_label_, lvgl_theme->text_color(), 0);
+    lv_obj_set_style_text_color(study_unit_label_, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_text_opa(study_unit_label_, LV_OPA_COVER, 0);
     lv_obj_set_style_text_align(study_unit_label_, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(study_unit_label_, LV_LABEL_LONG_WRAP);
+    lv_label_set_long_mode(study_unit_label_, LV_LABEL_LONG_CLIP);
+    lv_obj_align(study_unit_label_, LV_ALIGN_TOP_MID, 0, 20);
     lv_label_set_text(study_unit_label_, "");
 
     /* Line 2: the English word, the big one */
@@ -1279,9 +1277,11 @@ void LcdDisplay::CreateStudyCard() {
 #else
     lv_obj_set_style_text_font(study_word_label_, text_font, 0);
 #endif
-    lv_obj_set_style_text_color(study_word_label_, lvgl_theme->text_color(), 0);
+    lv_obj_set_style_text_color(study_word_label_, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_text_opa(study_word_label_, LV_OPA_COVER, 0);
     lv_obj_set_style_text_align(study_word_label_, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(study_word_label_, LV_LABEL_LONG_WRAP);
+    lv_label_set_long_mode(study_word_label_, LV_LABEL_LONG_CLIP);
+    lv_obj_align(study_word_label_, LV_ALIGN_TOP_MID, 0, 69);
     lv_label_set_text(study_word_label_, "");
 
     /* Line 3: letter by letter spelling */
@@ -1292,9 +1292,11 @@ void LcdDisplay::CreateStudyCard() {
 #else
     lv_obj_set_style_text_font(study_spell_label_, text_font, 0);
 #endif
-    lv_obj_set_style_text_color(study_spell_label_, lvgl_theme->text_color(), 0);
+    lv_obj_set_style_text_color(study_spell_label_, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_text_opa(study_spell_label_, LV_OPA_COVER, 0);
     lv_obj_set_style_text_align(study_spell_label_, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(study_spell_label_, LV_LABEL_LONG_WRAP);
+    lv_label_set_long_mode(study_spell_label_, LV_LABEL_LONG_CLIP);
+    lv_obj_align(study_spell_label_, LV_ALIGN_TOP_MID, 0, 128);
     lv_label_set_text(study_spell_label_, "");
 
     /* Line 4: Chinese meaning */
@@ -1305,12 +1307,29 @@ void LcdDisplay::CreateStudyCard() {
 #else
     lv_obj_set_style_text_font(study_zh_label_, text_font, 0);
 #endif
-    lv_obj_set_style_text_color(study_zh_label_, lvgl_theme->text_color(), 0);
+    lv_obj_set_style_text_color(study_zh_label_, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_text_opa(study_zh_label_, LV_OPA_COVER, 0);
     lv_obj_set_style_text_align(study_zh_label_, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(study_zh_label_, LV_LABEL_LONG_WRAP);
+    lv_label_set_long_mode(study_zh_label_, LV_LABEL_LONG_CLIP);
+    lv_obj_align(study_zh_label_, LV_ALIGN_TOP_MID, 0, 171);
     lv_label_set_text(study_zh_label_, "");
 
     lv_obj_add_flag(study_card_, LV_OBJ_FLAG_HIDDEN);
+
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    /* 自检：三个自带字体能不能真的量出字宽。量不出来就说明字形数据有问题。 */
+    {
+        lv_point_t size;
+        lv_text_get_size(&size, "Afternoon", &font_study_latin_40, 0, 0, LV_COORD_MAX,
+                         LV_TEXT_FLAG_NONE);
+        ESP_LOGI(TAG, "study font latin40: Afternoon %dx%d", (int)size.x, (int)size.y);
+        lv_text_get_size(&size, "a-f-t-e-r-n-o-o-n", &font_study_latin_26, 0, 0, LV_COORD_MAX,
+                         LV_TEXT_FLAG_NONE);
+        ESP_LOGI(TAG, "study font latin26: spell %dx%d", (int)size.x, (int)size.y);
+        lv_text_get_size(&size, "下午", &font_study_cjk_48, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        ESP_LOGI(TAG, "study font cjk48: 下午 %dx%d", (int)size.x, (int)size.y);
+    }
+#endif
 }
 
 void LcdDisplay::ShowStudyCard(int unit, int index, int word_count, const char* word,
@@ -1334,6 +1353,23 @@ void LcdDisplay::ShowStudyCard(int unit, int index, int word_count, const char* 
 
     lv_obj_remove_flag(study_card_, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(study_card_);
+
+    /* 自检：把实际文本量出来，确认字体与位置都对得上。 */
+    ESP_LOGI(TAG, "study card: '%s' / '%s' / '%s'", word != nullptr ? word : "",
+             spell != nullptr ? spell : "", zh != nullptr ? zh : "");
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    {
+        lv_point_t size;
+        lv_text_get_size(&size, word != nullptr ? word : "", &font_study_latin_40, 0, 0,
+                         LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        ESP_LOGI(TAG, "study text: word %dx%d at y=%d", (int)size.x, (int)size.y,
+                 (int)lv_obj_get_y(study_word_label_));
+        lv_text_get_size(&size, zh != nullptr ? zh : "", &font_study_cjk_48, 0, 0, LV_COORD_MAX,
+                         LV_TEXT_FLAG_NONE);
+        ESP_LOGI(TAG, "study text: zh %dx%d at y=%d", (int)size.x, (int)size.y,
+                 (int)lv_obj_get_y(study_zh_label_));
+    }
+#endif
 }
 
 void LcdDisplay::HideStudyCard() {
