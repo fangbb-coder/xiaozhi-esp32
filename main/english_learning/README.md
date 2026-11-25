@@ -226,3 +226,60 @@ $gxx="$root\tools\w64devkit\w64devkit\bin\g++.exe"
 - 完整剧本：开始 → 问单元 → 选单元 → 逐词（含重复）→ 最后一个词 → 结束语
 - 退出教学能恢复服务端播报
 - 学习中途改问问题会把这一轮交回服务端
+
+## 9. 上板验证（2026-11-25）
+
+固件由 GitHub Actions 编出（fork `fangbb-coder/xiaozhi-esp32`，分支 `feature/english-learning`），
+app 镜像 **3,678,336 B**，分区上限 4,128,768 B，**余量 450,432 B**。
+
+### 9.1 开机自检
+
+```
+I (220) Board: UUID=... SKU=lichuang-dev-english
+I (1220) MCP: Add tool: self.english_learning.list_units [user]
+I (1240) EnglishLearning: hooks installed (ready=1)
+I (1270) EnglishAudio: 337/337 audio assets resolved via candidate 0, 598.0 KB total
+```
+
+`candidate 0` 命中，说明这台 IDF 的 `EMBED_FILES` 符号名就是「只取文件名」；
+但三候选弱符号方案本身不依赖这个结论，猜错也能跑。
+
+### 9.2 完整剧本实测
+
+```
+I (172860) Application: >> 我要学习英语单词。
+I (172860) EnglishLearning: text='我要学习英语单词。' intent=start unit=0 state=0
+I (172860) EnglishLearning: state -> 1
+I (172870) Application: server speech suppressed
+I (172870) EnglishLearning: play prompt_start.ogg (step 1/2)
+I (176000) EnglishLearning: play prompt_ask_unit.ogg (step 2/2)
+
+I (51850) Application: >> 下一个。
+I (51860) EnglishLearning: text='下一个。' intent=next unit=0 state=2
+I (51860) EnglishLearning: play en_u4_w03.ogg (step 1/3)
+I (53740) EnglishLearning: play en_u4_w03_spell.ogg (step 2/3)
+I (56300) EnglishLearning: play zh_u4_w03.ogg (step 3/3)
+
+I (65750) Application: >> 你。
+I (67160) EnglishLearning: text='你。' intent=none unit=0 state=2
+I (67160) EnglishLearning: play prompt_confused.ogg (step 1/1)
+
+I (110300) Application: >> 退出。
+I (110300) EnglishLearning: text='退出。' intent=exit unit=0 state=2
+I (110300) EnglishLearning: state -> 0
+```
+
+- 选单元后逐词播放「英文 → 逐字母拼写 → 汉语意思」三段；
+- 听不清 → 播 `prompt_confused.ogg`，**留在教学态**而不是退出；
+- 「退出」→ 状态归零，服务端恢复正常；
+- 唤醒词「你好小智」被 ASR 听成普通语句 → `intent=none`，安静忽略；
+- 全程 **0 条 E 级日志，无 panic**。
+
+> 单元 4 实测到第 8 个词时手动说了「退出」提前结束，所以「本单元单词学习结束。」
+> 这句在板上没听到；该路径有主机侧单测覆盖（133 断言）。
+
+### 9.3 烧录注意：只刷 app 槽
+
+`merged-binary.bin` 里打包了 assets 分区（0x800000，约 1.78 MB），整包刷会冲掉
+自定义唤醒词。正确做法是只把 app 镜像写进 ota_0 (0x20000) / ota_1 (0x410000)，
+nvs、assets、bootloader、分区表全部保留。脚本见项目目录 `scripts/flash-app-only.ps1`。
