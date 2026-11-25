@@ -1238,7 +1238,7 @@ void LcdDisplay::CreateStudyCard() {
     lv_obj_set_style_shadow_width(study_card_, 0, 0);
     lv_obj_set_style_bg_color(study_card_, lv_color_hex(0xFFFFFF), 0);
     lv_obj_set_style_bg_opa(study_card_, LV_OPA_COVER, 0);
-    lv_obj_set_style_scrollbar_mode(study_card_, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_scrollbar_mode(study_card_, LV_SCROLLBAR_MODE_OFF);
     lv_obj_remove_flag(study_card_, LV_OBJ_FLAG_SCROLLABLE);
 
     study_content_ = lv_obj_create(study_card_);
@@ -1265,7 +1265,7 @@ void LcdDisplay::CreateStudyCard() {
     lv_obj_set_style_text_color(study_unit_label_, lv_color_hex(0x000000), 0);
     lv_obj_set_style_text_opa(study_unit_label_, LV_OPA_COVER, 0);
     lv_obj_set_style_text_align(study_unit_label_, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(study_unit_label_, LV_LABEL_LONG_CLIP);
+    lv_label_set_long_mode(study_unit_label_, LV_LABEL_LONG_MODE_CLIP);
     lv_obj_align(study_unit_label_, LV_ALIGN_TOP_MID, 0, 20);
     lv_label_set_text(study_unit_label_, "");
 
@@ -1280,7 +1280,7 @@ void LcdDisplay::CreateStudyCard() {
     lv_obj_set_style_text_color(study_word_label_, lv_color_hex(0x000000), 0);
     lv_obj_set_style_text_opa(study_word_label_, LV_OPA_COVER, 0);
     lv_obj_set_style_text_align(study_word_label_, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(study_word_label_, LV_LABEL_LONG_CLIP);
+    lv_label_set_long_mode(study_word_label_, LV_LABEL_LONG_MODE_CLIP);
     lv_obj_align(study_word_label_, LV_ALIGN_TOP_MID, 0, 69);
     lv_label_set_text(study_word_label_, "");
 
@@ -1295,7 +1295,7 @@ void LcdDisplay::CreateStudyCard() {
     lv_obj_set_style_text_color(study_spell_label_, lv_color_hex(0x000000), 0);
     lv_obj_set_style_text_opa(study_spell_label_, LV_OPA_COVER, 0);
     lv_obj_set_style_text_align(study_spell_label_, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(study_spell_label_, LV_LABEL_LONG_CLIP);
+    lv_label_set_long_mode(study_spell_label_, LV_LABEL_LONG_MODE_CLIP);
     lv_obj_align(study_spell_label_, LV_ALIGN_TOP_MID, 0, 128);
     lv_label_set_text(study_spell_label_, "");
 
@@ -1310,7 +1310,7 @@ void LcdDisplay::CreateStudyCard() {
     lv_obj_set_style_text_color(study_zh_label_, lv_color_hex(0x000000), 0);
     lv_obj_set_style_text_opa(study_zh_label_, LV_OPA_COVER, 0);
     lv_obj_set_style_text_align(study_zh_label_, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(study_zh_label_, LV_LABEL_LONG_CLIP);
+    lv_label_set_long_mode(study_zh_label_, LV_LABEL_LONG_MODE_CLIP);
     lv_obj_align(study_zh_label_, LV_ALIGN_TOP_MID, 0, 171);
     lv_label_set_text(study_zh_label_, "");
 
@@ -1320,13 +1320,13 @@ void LcdDisplay::CreateStudyCard() {
     /* 自检：三个自带字体能不能真的量出字宽。量不出来就说明字形数据有问题。 */
     {
         lv_point_t size;
-        lv_text_get_size(&size, "Afternoon", &font_study_latin_40, 0, 0, LV_COORD_MAX,
+        lv_text_get_size(&size, "Afternoon", &font_study_latin_40, 0, 0, 10000,
                          LV_TEXT_FLAG_NONE);
         ESP_LOGI(TAG, "study font latin40: Afternoon %dx%d", (int)size.x, (int)size.y);
-        lv_text_get_size(&size, "a-f-t-e-r-n-o-o-n", &font_study_latin_26, 0, 0, LV_COORD_MAX,
+        lv_text_get_size(&size, "a-f-t-e-r-n-o-o-n", &font_study_latin_26, 0, 0, 10000,
                          LV_TEXT_FLAG_NONE);
         ESP_LOGI(TAG, "study font latin26: spell %dx%d", (int)size.x, (int)size.y);
-        lv_text_get_size(&size, "下午", &font_study_cjk_48, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        lv_text_get_size(&size, "下午", &font_study_cjk_48, 0, 0, 10000, LV_TEXT_FLAG_NONE);
         ESP_LOGI(TAG, "study font cjk48: 下午 %dx%d", (int)size.x, (int)size.y);
     }
 #endif
@@ -1361,10 +1361,10 @@ void LcdDisplay::ShowStudyCard(int unit, int index, int word_count, const char* 
     {
         lv_point_t size;
         lv_text_get_size(&size, word != nullptr ? word : "", &font_study_latin_40, 0, 0,
-                         LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+                         10000, LV_TEXT_FLAG_NONE);
         ESP_LOGI(TAG, "study text: word %dx%d at y=%d", (int)size.x, (int)size.y,
                  (int)lv_obj_get_y(study_word_label_));
-        lv_text_get_size(&size, zh != nullptr ? zh : "", &font_study_cjk_48, 0, 0, LV_COORD_MAX,
+        lv_text_get_size(&size, zh != nullptr ? zh : "", &font_study_cjk_48, 0, 0, 10000,
                          LV_TEXT_FLAG_NONE);
         ESP_LOGI(TAG, "study text: zh %dx%d at y=%d", (int)size.x, (int)size.y,
                  (int)lv_obj_get_y(study_zh_label_));
