@@ -1355,21 +1355,21 @@ if(CONFIG_ENGLISH_LEARNING_ENABLED)
 
     add_custom_command(
         OUTPUT ${ENGLISH_WORD_TABLE}
-        COMMAND python ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_english_word_table.py
+        COMMAND python ${PROJECT_DIR}/scripts/gen_english_word_table.py
                 --data "${ENGLISH_WORDS_JSON}"
                 --out "${ENGLISH_WORD_TABLE}"
         DEPENDS ${ENGLISH_WORDS_JSON}
-                ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_english_word_table.py
+                ${PROJECT_DIR}/scripts/gen_english_word_table.py
         COMMENT "Generating English learning word table"
     )
 
     add_custom_command(
         OUTPUT ${ENGLISH_AUDIO_TABLE}
-        COMMAND python ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_english_audio_index.py
+        COMMAND python ${PROJECT_DIR}/scripts/gen_english_audio_index.py
                 --assets "${CMAKE_CURRENT_SOURCE_DIR}/assets/english"
                 --output "${ENGLISH_AUDIO_TABLE}"
         DEPENDS ${ENGLISH_AUDIO_FILES}
-                ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_english_audio_index.py
+                ${PROJECT_DIR}/scripts/gen_english_audio_index.py
         COMMENT "Generating English learning audio index"
     )
 
