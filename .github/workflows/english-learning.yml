@@ -55,6 +55,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Generate embedded tables
+        run: |
+          set -euo pipefail
+          # word_table.h / english_audio_table.h 由构建系统自动生成（已 .gitignore），
+          # 全新 checkout 里没有，主机侧测试必须先手动生成一次。
+          python3 scripts/gen_english_word_table.py
+          python3 scripts/gen_english_audio_index.py
+
       - name: Compile and run intent parser test
         run: |
           set -euo pipefail
