@@ -564,6 +564,11 @@ void LcdDisplay::SetupUI() {
     lv_obj_set_style_text_font(emoji_label_, large_icon_font, 0);
     lv_obj_set_style_text_color(emoji_label_, lvgl_theme->text_color(), 0);
     lv_label_set_text(emoji_label_, MATERIAL_SYMBOLS_ROBOT_2);
+
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    // 开机字体自检：渲染一帧样例单词卡。
+    StartStudyFontSelfTest();
+#endif
 }
 #if CONFIG_IDF_TARGET_ESP32P4
 #define MAX_MESSAGES 40
@@ -1105,6 +1110,11 @@ void LcdDisplay::SetupUI() {
     lv_obj_set_style_text_color(low_battery_label_, lv_color_white(), 0);
     lv_obj_center(low_battery_label_);
     lv_obj_add_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN);
+
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    // 开机字体自检：渲染一帧样例单词卡。
+    StartStudyFontSelfTest();
+#endif
 }
 
 void LcdDisplay::SetPreviewImage(std::unique_ptr<LvglImage> image) {
@@ -1331,6 +1341,88 @@ void LcdDisplay::CreateStudyCard() {
     }
 #endif
 }
+
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+namespace {
+
+// 开机自检用的样例内容，取自词表里的真实条目（unit 1 的第一个词）。
+constexpr const char* kSelfTestUnit = "Unit 1    1 / 21";
+constexpr const char* kSelfTestWord = "afternoon";
+constexpr const char* kSelfTestSpell = "a-f-t-e-r-n-o-o-n";
+constexpr const char* kSelfTestZh = "下午";
+
+}  // namespace
+
+void LcdDisplay::StartStudyFontSelfTest() {
+    // 幂等：卡片已经在就复用。
+    CreateStudyCard();
+    if (study_card_ == nullptr) {
+        ESP_LOGW(TAG, "study selftest: card was not created");
+        return;
+    }
+
+    // 等开机画面（AI logo）稳定后再闪。
+    lv_timer_create(
+        [](lv_timer_t* timer) {
+            // user_data 要在删 timer 之前取出来。
+            auto* display = static_cast<LcdDisplay*>(timer->user_data);
+            lv_timer_delete(timer);
+            if (display != nullptr) {
+                display->ShowStudySelfTestCard();
+            }
+        },
+        2500, this);
+}
+
+void LcdDisplay::ShowStudySelfTestCard() {
+    if (study_card_ == nullptr || study_word_label_ == nullptr) {
+        return;
+    }
+
+    lv_label_set_text(study_unit_label_, kSelfTestUnit);
+    lv_label_set_text(study_word_label_, kSelfTestWord);
+    lv_label_set_text(study_spell_label_, kSelfTestSpell);
+    lv_label_set_text(study_zh_label_, kSelfTestZh);
+
+    // 量字宽：字形描述符坏了这里就是 0。
+    lv_point_t size;
+    lv_text_get_size(&size, kSelfTestWord, &font_study_latin_40, 0, 0, 10000,
+                     LV_TEXT_FLAG_NONE);
+    ESP_LOGI(TAG, "study selftest: latin40 '%s' %dx%d", kSelfTestWord, (int)size.x,
+             (int)size.y);
+    lv_text_get_size(&size, kSelfTestSpell, &font_study_latin_26, 0, 0, 10000,
+                     LV_TEXT_FLAG_NONE);
+    ESP_LOGI(TAG, "study selftest: latin26 %dx%d", (int)size.x, (int)size.y);
+    lv_text_get_size(&size, kSelfTestZh, &font_study_cjk_48, 0, 0, 10000,
+                     LV_TEXT_FLAG_NONE);
+    ESP_LOGI(TAG, "study selftest: cjk48 '%s' %dx%d", kSelfTestZh, (int)size.x,
+             (int)size.y);
+
+    // 亮出来。LVGL 下一轮刷新会真的去取位图：
+    // 压缩位图 + CONFIG_LV_USE_FONT_COMPRESSED=n 会打出
+    // "Compressed fonts is used but LV_USE_FONT_COMPRESSED is not enabled" 的 warn。
+    lv_obj_remove_flag(study_card_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(study_card_);
+
+    // 闪一下就收回去，别一直占着屏幕。
+    lv_timer_create(
+        [](lv_timer_t* timer) {
+            auto* display = static_cast<LcdDisplay*>(timer->user_data);
+            lv_timer_delete(timer);
+            if (display != nullptr) {
+                display->HideStudySelfTestCard();
+            }
+        },
+        1500, this);
+}
+
+void LcdDisplay::HideStudySelfTestCard() {
+    if (study_card_ == nullptr) {
+        return;
+    }
+    lv_obj_add_flag(study_card_, LV_OBJ_FLAG_HIDDEN);
+}
+#endif  // CONFIG_ENGLISH_LEARNING_ENABLED
 
 void LcdDisplay::ShowStudyCard(int unit, int index, int word_count, const char* word,
                                const char* spell, const char* zh) {

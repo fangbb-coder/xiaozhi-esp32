@@ -48,6 +48,13 @@ protected:
     void ShowEmotion();
     // Must be called with the display lock held.
     void CreateStudyCard();
+    // 开机字体自检：把样例单词卡显示出来，逼 LVGL 真的去取位图。
+    // 背景：本板 sdkconfig 里 CONFIG_LV_USE_FONT_COMPRESSED=n，
+    // 一旦字体还是压缩位图，lv_font_get_bitmap_fmt_txt() 会直接返回 NULL，
+    // 表现就是「背景照画、字一个都不画」。自检把这问题当场暴露在开机日志里。
+    void StartStudyFontSelfTest();
+    void ShowStudySelfTestCard();
+    void HideStudySelfTestCard();
     virtual bool Lock(int timeout_ms = 0) override;
     virtual void Unlock() override;
 
