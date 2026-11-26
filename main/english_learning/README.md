@@ -156,7 +156,7 @@ I (1234) EnglishAudio: 337/337 audio assets resolved via candidate 0, 598.0 KB t
 | 音频（337 段） | 574 KB |
 | 词表头文件 `word_table.h` | 12 KB |
 | 音频索引表（flash 常量） | ~15 KB |
-| 卡片自带字体（4 个子集） | ~90 KB |
+| 卡片自带字体（4 个子集） | ~203 KB |
 | 代码 | ~40 KB |
 | **合计** | **约 0.75 MB** |
 
@@ -387,3 +387,70 @@ nvs、assets、bootloader、分区表全部保留。脚本见项目目录 `scrip
   `study font latin40 / latin26 / cjk48` —— 量出 0 就是字体数据有问题。
 * 显示卡片时量实际文本的宽高与 y 坐标：
   `study text: word WxH at y=N` / `study text: zh WxH at y=N` —— 和设计值对不上就是布局问题。
+
+### 10.5 真正的根因：plain 位图 vs 压缩位图（2026-11-26）
+
+10.4 的两条改动（白底黑字 + 绝对定位）刷进去之后，用户反馈：
+**屏幕不再全黑、有点亮了，但仍然一个字符都没有**。说明 10.4 猜错了方向。
+
+查 LVGL v9.5.0 的 `src/font/fmt_txt/lv_font_fmt_txt.c` 源码，有这么一段：
+
+```c
+    if(fdsc->bitmap_format == LV_FONT_FMT_TXT_PLAIN) {
+        /* 解到 draw_buf 里 */
+        return draw_buf;
+    }
+    else {
+#if LV_USE_FONT_COMPRESSED
+        decompress(...);
+        return draw_buf;
+#else
+        LV_LOG_WARN("Compressed fonts is used but LV_USE_FONT_COMPRESSED is not enabled in lv_conf.h");
+        return NULL;      // <- 位图取不到
+#endif
+    }
+```
+
+而本板 `main/sdkconfig.defaults` 第 55 行写着 `CONFIG_LV_USE_FONT_COMPRESSED=n`，
+`tools/gen_study_fonts.py` 生成的却是**压缩位图**（`bitmap_format = 1`）。
+两边一撞，`lv_font_get_bitmap_fmt_txt()` 直接返回 NULL：
+**背景照画、字一个都不画**，和症状完全吻合。
+
+对照物就在仓库里：能正常显示的官方字体 `main/boards/electron-bot/otto_icon_font.c`
+写的是 `.bitmap_format = 0`（plain）。
+
+| | 之前 | 现在 |
+|---|---|---|
+| `bitmap_format` | 1（压缩） | 0（plain） |
+| 生成参数 | lv_font_conv 默认（压缩） | `--no-compress --no-prefilter --no-kerning` |
+| 字符集选择 | `--symbols` | `-r <码点区间>`（与上游 `compact_ranges` 同算法） |
+| 位图能否取到 | 返回 NULL | 能取到 |
+
+**为什么前几轮没查出来**：`lv_text_get_size()` 只读 glyph_dsc 里的 `box_w/box_h`，
+压缩字体的描述符本身是好的，所以自检日志照样能量出正常字宽 ——
+**字宽正常但位图取不到**，量宽度这条自检路线天生看不出这个问题。
+
+**对齐上游**：上游 `78/xiaozhi-fonts/scripts/build.py` 调 lv_font_conv 用的是
+`--no-compress --no-prefilter --force-fast-kern-format` + `-r <ranges>`。
+本轮照抄，kerning 换成 `--no-kerning`：单词卡用不到字距微调，
+而 186 个汉字两两配对能出上万对 kerning，纯属白占 flash。
+
+**生成脚本加硬断言**：产物里 `bitmap_format` 不是 0 就直接失败退出，
+不再依赖人肉记住命令参数。
+
+**开机自检**：开机 2.5 秒后自动渲染一帧样例单词卡（`afternoon` / `a-f-t-e-r-n-o-o-n` / `下午`），
+1.5 秒后收回。日志会打：
+
+```
+study selftest: latin40 'afternoon' 178x41
+study selftest: latin26 289x25
+study selftest: cjk48 '下午' 96x47
+```
+
+字体要是还是压缩的，LVGL 会打
+`Compressed fonts is used but LV_USE_FONT_COMPRESSED is not enabled` —— 一眼就能看出来。
+
+> **体积别看 .c 源文件大小**：字体 .c 是十六进制文本，`font_study_cjk_48.c` 看着 1 MB，
+> 编译进 flash 的只有位图本体。四个字体实测合计约 **203 KB**（位图 196 KB + 描述符 7.4 KB）。
+> 判断占用要看 CI 报的 app image 大小，不是 .c 文件大小。
+
