@@ -303,6 +303,45 @@ int ExtractUnitNumber(const std::string& norm) {
     return 0;
 }
 
+/**
+ * 抠出「第 N 个」里的 N（1-based）。
+ *
+ * 支持：第三个 / 第3个 / 第3个单词 / 跳到第五个
+ * 注意：这里只认「第」，所以「最后一个」不在这里处理（见 IsLastWordRequest）。
+ */
+int ExtractWordIndex(const std::string& s) {
+    size_t pos = 0;
+    while (true) {
+        size_t at = s.find("第", pos);
+        if (at == std::string::npos) {
+            return 0;
+        }
+        size_t q = at + 3;  // 「第」是 3 字节 UTF-8
+        size_t end = ScanNumberForward(s, q);
+        if (end > q) {
+            int v = ParseNumberSegment(s.substr(q, end - q));
+            if (v > 0) {
+                return v;
+            }
+        }
+        pos = at + 3;
+    }
+}
+
+/** 「最后一个」类说法。没有「第 N 个」的数字，靠关键词判定。 */
+bool IsLastWordRequest(const std::string& s) {
+    static const char* const kMarkers[] = {
+        "最后一个", "最後一個", "最后1个", "最后1個", "最后一个词", "最後一個詞",
+        "最后一个单词", "最後一個單詞", "末个", "末一個", "最后", "最後",
+    };
+    for (const char* marker : kMarkers) {
+        if (Contains(s, marker)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /* ---------------- 关键词表 ---------------- */
 
 struct KeywordSet {
@@ -336,6 +375,11 @@ const char* const kNextWords[] = {
     "继续", "繼續", "next", "再下一个", "下一个吧",
 };
 
+const char* const kPrevWords[] = {
+    "上一个", "上一個", "前一个", "前一個", "上一个词", "上一個詞", "上一个单词",
+    "上一個單詞", "回上一个", "回到上一个", "往前一个", "previous", "prev",
+};
+
 const char* const kStartWords[] = {
     "英语单词", "英語單詞", "英文单词", "英文單詞", "背单词", "背單詞", "学单词", "學單詞",
     "背英语", "背英語", "学英语", "學英語", "背英文", "学英文", "学习单词", "學習單詞",
@@ -350,6 +394,7 @@ const char* const kRepeatWords[] = {
 const KeywordSet kExitSet{kExitWords, sizeof(kExitWords) / sizeof(kExitWords[0])};
 const KeywordSet kListUnitsSet{kListUnitsWords, sizeof(kListUnitsWords) / sizeof(kListUnitsWords[0])};
 const KeywordSet kNextSet{kNextWords, sizeof(kNextWords) / sizeof(kNextWords[0])};
+const KeywordSet kPrevSet{kPrevWords, sizeof(kPrevWords) / sizeof(kPrevWords[0])};
 const KeywordSet kStartSet{kStartWords, sizeof(kStartWords) / sizeof(kStartWords[0])};
 const KeywordSet kRepeatSet{kRepeatWords, sizeof(kRepeatWords) / sizeof(kRepeatWords[0])};
 
@@ -375,12 +420,17 @@ ParsedIntent ParseIntent(const std::string& text, int unit_count) {
         result.intent = Intent::kListUnits;
         return result;
     }
-    // 3) 下一个 —— 必须排在选单元前面，"下一个单元"是"下一个"不是"第1单元"
+    // 3) 上一个 —— 必须排在"下一个"和"第N个"前面："上一个"里也含"一个"
+    if (HasAny(norm, kPrevSet)) {
+        result.intent = Intent::kPrev;
+        return result;
+    }
+    // 4) 下一个 —— 必须排在选单元前面，"下一个单元"是"下一个"不是"第1单元"
     if (HasAny(norm, kNextSet)) {
         result.intent = Intent::kNext;
         return result;
     }
-    // 4) 选单元 —— 必须排在"开始"前面，"学习第三单元的单词"是选单元
+    // 5) 选单元 —— 必须排在"开始"前面，"学习第三单元的单词"是选单元
     //    中文说"单元"，英文说"unit"，两种都要认
     const bool mentions_unit_zh = Contains(norm, "单元") || Contains(norm, "單元");
     const bool mentions_unit_en = Contains(norm, "unit");
@@ -398,7 +448,20 @@ ParsedIntent ParseIntent(const std::string& text, int unit_count) {
         }
         // 英文 "unit" 后面没数字 → 不认，继续往下
     }
-    // 5) 开始学习
+    // 6) 跳到第 N 个 —— 必须排在"开始"前面。
+    //    「第三个」「第3个」「第一个」「最后一个」都走这里。
+    if (IsLastWordRequest(norm)) {
+        result.intent = Intent::kGoto;
+        result.word_index = -1;  // -1 = 最后一个
+        return result;
+    }
+    const int word_index = ExtractWordIndex(norm);
+    if (word_index > 0) {
+        result.intent = Intent::kGoto;
+        result.word_index = word_index;
+        return result;
+    }
+    // 7) 开始学习
     if (HasAny(norm, kStartSet)) {
         result.intent = Intent::kStart;
         return result;
@@ -416,6 +479,8 @@ const char* IntentName(Intent intent) {
         case Intent::kStart: return "start";
         case Intent::kSelectUnit: return "select_unit";
         case Intent::kNext: return "next";
+        case Intent::kPrev: return "prev";
+        case Intent::kGoto: return "goto";
         case Intent::kRepeat: return "repeat";
         case Intent::kExit: return "exit";
         case Intent::kListUnits: return "list_units";

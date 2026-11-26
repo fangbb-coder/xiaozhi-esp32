@@ -85,9 +85,11 @@ def main() -> int:
     add("    const char* en;      // 单词，如 \"playground\"")
     add("    const char* zh;      // 汉语意思，如 \"游乐场；操场\"")
     add("    const char* spell;   // 逐字母拆解，屏幕上显示，如 \"P-L-A-Y-G-R-O-U-N-D\"")
+    add("    const char* syllable; // 音节拆分，如 \"play-ground\"；单音节词为空串")
     add("    uint16_t en_len;")
     add("    uint16_t zh_len;")
     add("    uint16_t spell_len;")
+    add("    uint16_t syllable_len;")
     add("};")
     add("")
     add("/** 一个单元的词表。 */")
@@ -113,13 +115,15 @@ def main() -> int:
             en = w["en"].strip()
             zh = w.get("zh", "").strip()
             spell = spell_out(en)
+            syllable = (w.get("syllable") or "").strip()
             if not spell:
                 print(f"[WARN] Unit {u} 第 {idx + 1} 个词 '{en}' 拆不出字母，已跳过")
                 continue
             add(
                 f"static const WordEntry kU{u}W{idx + 1} = {{"
-                f"{c_str(en)}, {c_str(zh)}, {c_str(spell)}, "
-                f"{len(en.encode('utf-8'))}, {len(zh.encode('utf-8'))}, {len(spell.encode('utf-8'))}}};"
+                f"{c_str(en)}, {c_str(zh)}, {c_str(spell)}, {c_str(syllable)}, "
+                f"{len(en.encode('utf-8'))}, {len(zh.encode('utf-8'))}, "
+                f"{len(spell.encode('utf-8'))}, {len(syllable.encode('utf-8'))}}};"
             )
         add("")
         add(f"static const WordEntry kUnit{u}Words[] = {{")

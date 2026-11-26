@@ -1278,7 +1278,7 @@ void LcdDisplay::CreateStudyCard() {
     lv_obj_set_style_text_opa(study_unit_label_, LV_OPA_COVER, 0);
     lv_obj_set_style_text_align(study_unit_label_, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(study_unit_label_, LV_LABEL_LONG_MODE_CLIP);
-    lv_obj_align(study_unit_label_, LV_ALIGN_TOP_MID, 0, 20);
+    lv_obj_align(study_unit_label_, LV_ALIGN_TOP_MID, 0, 12);
     lv_label_set_text(study_unit_label_, "");
 
     /* Line 2: the English word, the big one */
@@ -1293,7 +1293,7 @@ void LcdDisplay::CreateStudyCard() {
     lv_obj_set_style_text_opa(study_word_label_, LV_OPA_COVER, 0);
     lv_obj_set_style_text_align(study_word_label_, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(study_word_label_, LV_LABEL_LONG_MODE_CLIP);
-    lv_obj_align(study_word_label_, LV_ALIGN_TOP_MID, 0, 69);
+    lv_obj_align(study_word_label_, LV_ALIGN_TOP_MID, 0, 53);
     lv_label_set_text(study_word_label_, "");
 
     /* Line 3: letter by letter spelling */
@@ -1308,8 +1308,23 @@ void LcdDisplay::CreateStudyCard() {
     lv_obj_set_style_text_opa(study_spell_label_, LV_OPA_COVER, 0);
     lv_obj_set_style_text_align(study_spell_label_, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(study_spell_label_, LV_LABEL_LONG_MODE_CLIP);
-    lv_obj_align(study_spell_label_, LV_ALIGN_TOP_MID, 0, 128);
+    lv_obj_align(study_spell_label_, LV_ALIGN_TOP_MID, 0, 104);
     lv_label_set_text(study_spell_label_, "");
+
+    /* Line 4: syllable split, e.g. "af-ter-noon". Only multi-syllable words have one. */
+    study_syllable_label_ = lv_label_create(study_content_);
+    lv_obj_set_width(study_syllable_label_, line_width);
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    lv_obj_set_style_text_font(study_syllable_label_, &font_study_latin_26, 0);
+#else
+    lv_obj_set_style_text_font(study_syllable_label_, text_font, 0);
+#endif
+    lv_obj_set_style_text_color(study_syllable_label_, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_text_opa(study_syllable_label_, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_align(study_syllable_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(study_syllable_label_, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_align(study_syllable_label_, LV_ALIGN_TOP_MID, 0, 139);
+    lv_label_set_text(study_syllable_label_, "");
 
     /* Line 4: Chinese meaning */
     study_zh_label_ = lv_label_create(study_content_);
@@ -1323,7 +1338,7 @@ void LcdDisplay::CreateStudyCard() {
     lv_obj_set_style_text_opa(study_zh_label_, LV_OPA_COVER, 0);
     lv_obj_set_style_text_align(study_zh_label_, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(study_zh_label_, LV_LABEL_LONG_MODE_CLIP);
-    lv_obj_align(study_zh_label_, LV_ALIGN_TOP_MID, 0, 171);
+    lv_obj_align(study_zh_label_, LV_ALIGN_TOP_MID, 0, 174);
     lv_label_set_text(study_zh_label_, "");
 
     lv_obj_add_flag(study_card_, LV_OBJ_FLAG_HIDDEN);
@@ -1444,7 +1459,7 @@ void LcdDisplay::HideStudySelfTestCard() {
 #endif  // CONFIG_ENGLISH_LEARNING_ENABLED
 
 void LcdDisplay::ShowStudyCard(int unit, int index, int word_count, const char* word,
-                               const char* spell, const char* zh) {
+                               const char* spell, const char* syllable, const char* zh) {
     if (!SupportsGuiOperations() || !setup_ui_called_) {
         ESP_LOGW(TAG, "ShowStudyCard() called before SetupUI()");
         return;
@@ -1460,6 +1475,7 @@ void LcdDisplay::ShowStudyCard(int unit, int index, int word_count, const char* 
     lv_label_set_text(study_unit_label_, header);
     lv_label_set_text(study_word_label_, word != nullptr ? word : "");
     lv_label_set_text(study_spell_label_, spell != nullptr ? spell : "");
+    lv_label_set_text(study_syllable_label_, syllable != nullptr ? syllable : "");
     lv_label_set_text(study_zh_label_, zh != nullptr ? zh : "");
 
     lv_obj_remove_flag(study_card_, LV_OBJ_FLAG_HIDDEN);

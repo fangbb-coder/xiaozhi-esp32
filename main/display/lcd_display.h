@@ -42,6 +42,7 @@ protected:
     lv_obj_t* study_unit_label_ = nullptr;
     lv_obj_t* study_word_label_ = nullptr;
     lv_obj_t* study_spell_label_ = nullptr;
+    lv_obj_t* study_syllable_label_ = nullptr;
     lv_obj_t* study_zh_label_ = nullptr;
 
     void InitializeLcdThemes();
@@ -68,7 +69,7 @@ public:
     virtual bool SetEmotion(const char* emotion) override;
     virtual void SetChatMessage(const char* role, const char* content) override;
     virtual void ShowStudyCard(int unit, int index, int word_count, const char* word,
-                               const char* spell, const char* zh) override;
+                               const char* spell, const char* syllable, const char* zh) override;
     virtual void HideStudyCard() override;
     virtual void RemoveChatMessage(const char* role, const char* content) override;
     virtual void ClearChatMessages() override;

@@ -49,6 +49,7 @@ struct StudyCard {
     int word_count = 0;     /**< 本单元总词数 */
     const char* word = "";  /**< 英文单词 */
     const char* spell = ""; /**< 逐字母拆解，如 "P-L-A-Y-G-R-O-U-N-D" */
+    const char* syllable = ""; /**< 音节拆分，如 "af-ter-noon"；单音节词为空串 */
     const char* zh = "";    /**< 汉语意思 */
     bool is_last = false;   /**< 是不是本单元最后一个词 */
 };
@@ -139,6 +140,8 @@ private:
     const WordEntry& CurrentWord() const;
     int CurrentWordCount() const;
     std::string AssetName(int unit, int index, const char* kind) const;
+    /** 教学播报顺序：单词 → 字母拼读 → 音节拼读 → 汉语意思 */
+    std::vector<std::string> BuildWordSequence(const WordEntry& word) const;
 
     State state_ = State::kIdle;
     int unit_ = 0;    /**< 1-based */

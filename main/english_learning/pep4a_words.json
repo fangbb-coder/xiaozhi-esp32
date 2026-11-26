@@ -8,7 +8,8 @@
       "level2": "true 表示该词带 *，属《义务教育英语课程标准（2022年版）》二级词"
     },
     "units": 6,
-    "zh_style": "kid-friendly, one line on 320x240"
+    "zh_style": "kid-friendly, one line on 320x240",
+    "syllable_source": "教材音节划分表（2026-11-26）；单音节词不标 syllable"
   },
   "units": [
     {
@@ -17,6 +18,7 @@
       "words": [
         {
           "en": "PE",
+          "syllable": "P-E",
           "ipa": "/ˌpiː 'iː/",
           "zh": "体育课",
           "level2": true
@@ -29,12 +31,14 @@
         },
         {
           "en": "doctor",
+          "syllable": "doc-tor",
           "ipa": "/'dɒktə(r)/",
           "zh": "医生",
           "level2": true
         },
         {
           "en": "farmer",
+          "syllable": "farm-er",
           "ipa": "/'fɑːmə(r)/",
           "zh": "农民",
           "level2": true
@@ -47,18 +51,21 @@
         },
         {
           "en": "office worker",
+          "syllable": "of-fice work-er",
           "ipa": "/'ɒfɪs/ 'wɜːkə(r)/",
           "zh": "公司职员",
           "level2": false
         },
         {
           "en": "factory worker",
+          "syllable": "fac-to-ry work-er",
           "ipa": "/'fæktri/ 'wɜːkə(r)/",
           "zh": "工厂工人",
           "level2": false
         },
         {
           "en": "busy",
+          "syllable": "bus-y",
           "ipa": "/'bɪzi/",
           "zh": "忙碌的",
           "level2": true
@@ -95,6 +102,7 @@
         },
         {
           "en": "look after",
+          "syllable": "look af-ter",
           "ipa": "",
           "zh": "照顾",
           "level2": false
@@ -113,12 +121,14 @@
         },
         {
           "en": "together",
+          "syllable": "to-geth-er",
           "ipa": "/tə'geðə(r)/",
           "zh": "一起",
           "level2": false
         },
         {
           "en": "people",
+          "syllable": "peo-ple",
           "ipa": "/'piːpl/",
           "zh": "人们",
           "level2": true
@@ -162,6 +172,7 @@
         },
         {
           "en": "quiet",
+          "syllable": "qui-et",
           "ipa": "/'kwaɪət/",
           "zh": "文静的",
           "level2": true
@@ -180,6 +191,7 @@
         },
         {
           "en": "Chinese",
+          "syllable": "Chi-nese",
           "ipa": "/ˌtʃaɪ'niːz/",
           "zh": "中文",
           "level2": true
@@ -198,18 +210,21 @@
         },
         {
           "en": "football",
+          "syllable": "foot-ball",
           "ipa": "/'fʊtbɔːl/",
           "zh": "足球",
           "level2": true
         },
         {
           "en": "basketball",
+          "syllable": "bas-ket-ball",
           "ipa": "/'bɑːskɪtbɔːl/",
           "zh": "篮球",
           "level2": true
         },
         {
           "en": "always",
+          "syllable": "al-ways",
           "ipa": "/'ɔːlweɪz/",
           "zh": "总是",
           "level2": true
@@ -222,6 +237,7 @@
       "words": [
         {
           "en": "afternoon",
+          "syllable": "af-ter-noon",
           "ipa": "/ˌɑːftə'nuːn/",
           "zh": "下午",
           "level2": true
@@ -234,6 +250,7 @@
         },
         {
           "en": "playground",
+          "syllable": "play-ground",
           "ipa": "/'pleɪgraʊnd/",
           "zh": "游乐场",
           "level2": true
@@ -246,12 +263,14 @@
         },
         {
           "en": "over",
+          "syllable": "o-ver",
           "ipa": "/'əʊvə(r)/",
           "zh": "在上方",
           "level2": true
         },
         {
           "en": "hospital",
+          "syllable": "hos-pi-tal",
           "ipa": "/'hɒspɪtl/",
           "zh": "医院",
           "level2": true
@@ -264,6 +283,7 @@
         },
         {
           "en": "toilet",
+          "syllable": "toi-let",
           "ipa": "/'tɔɪlət/",
           "zh": "厕所",
           "level2": true
@@ -276,6 +296,7 @@
         },
         {
           "en": "library",
+          "syllable": "li-brar-y",
           "ipa": "/'laɪbrəri/",
           "zh": "图书馆",
           "level2": true
@@ -294,12 +315,14 @@
         },
         {
           "en": "community",
+          "syllable": "com-mu-ni-ty",
           "ipa": "/kə'mjuːnəti/",
           "zh": "社区",
           "level2": false
         },
         {
           "en": "favourite",
+          "syllable": "fa-vour-ite",
           "ipa": "/'feɪvərɪt/",
           "zh": "最喜欢的",
           "level2": true
@@ -312,12 +335,14 @@
         },
         {
           "en": "photo",
+          "syllable": "pho-to",
           "ipa": "/'fəʊtəʊ/",
           "zh": "照片",
           "level2": true
         },
         {
           "en": "story",
+          "syllable": "sto-ry",
           "ipa": "/'stɔːri/",
           "zh": "故事",
           "level2": true
@@ -336,6 +361,7 @@
       "words": [
         {
           "en": "firefighter",
+          "syllable": "fire-fight-er",
           "ipa": "/'faɪəfaɪtə(r)/",
           "zh": "消防员",
           "level2": false
@@ -348,18 +374,21 @@
         },
         {
           "en": "driver",
+          "syllable": "driv-er",
           "ipa": "/'draɪvə(r)/",
           "zh": "司机",
           "level2": true
         },
         {
           "en": "important",
+          "syllable": "im-por-tant",
           "ipa": "/ɪm'pɔːtnt/",
           "zh": "重要的",
           "level2": false
         },
         {
           "en": "cleaner",
+          "syllable": "clean-er",
           "ipa": "/'kliːnə(r)/",
           "zh": "清洁工",
           "level2": false
@@ -372,12 +401,14 @@
         },
         {
           "en": "delivery worker",
+          "syllable": "de-liv-er-y work-er",
           "ipa": "/dɪ'lɪvəri/ 'wɜːkə(r)/",
           "zh": "快递员",
           "level2": false
         },
         {
           "en": "police officer",
+          "syllable": "po-lice of-fi-cer",
           "ipa": "/pə'liːs/ 'ɒfɪsə(r)/",
           "zh": "警察",
           "level2": false
@@ -414,6 +445,7 @@
         },
         {
           "en": "everyone",
+          "syllable": "ev-ery-one",
           "ipa": "/'evriwʌn/",
           "zh": "每人",
           "level2": false
@@ -438,12 +470,14 @@
         },
         {
           "en": "weather",
+          "syllable": "weath-er",
           "ipa": "/'weðə(r)/",
           "zh": "天气",
           "level2": true
         },
         {
           "en": "sunny",
+          "syllable": "sun-ny",
           "ipa": "/'sʌni/",
           "zh": "晴朗的",
           "level2": true
@@ -468,24 +502,28 @@
         },
         {
           "en": "windy",
+          "syllable": "win-dy",
           "ipa": "/'wɪndi/",
           "zh": "有风的",
           "level2": true
         },
         {
           "en": "cloudy",
+          "syllable": "cloud-y",
           "ipa": "/'klaʊdi/",
           "zh": "多云的",
           "level2": true
         },
         {
           "en": "rainy",
+          "syllable": "rain-y",
           "ipa": "/'reɪni/",
           "zh": "下雨的",
           "level2": false
         },
         {
           "en": "snowy",
+          "syllable": "snow-y",
           "ipa": "/'snəʊi/",
           "zh": "下雪的",
           "level2": false
@@ -504,6 +542,7 @@
         },
         {
           "en": "tomorrow",
+          "syllable": "to-mor-row",
           "ipa": "/tə'mɒrəʊ/",
           "zh": "明天",
           "level2": true
@@ -528,6 +567,7 @@
         },
         {
           "en": "idea",
+          "syllable": "i-de-a",
           "ipa": "/aɪ'dɪə/",
           "zh": "想法",
           "level2": true
@@ -546,6 +586,7 @@
         },
         {
           "en": "snowman",
+          "syllable": "snow-man",
           "ipa": "/'snəʊmæn/",
           "zh": "雪人",
           "level2": false
@@ -570,6 +611,7 @@
         },
         {
           "en": "Sydney",
+          "syllable": "Syd-ney",
           "ipa": "/'sɪdni/",
           "zh": "悉尼",
           "level2": false
@@ -588,6 +630,7 @@
         },
         {
           "en": "sweater",
+          "syllable": "sweat-er",
           "ipa": "/'swetə(r)/",
           "zh": "毛衣",
           "level2": true
@@ -636,12 +679,14 @@
         },
         {
           "en": "season",
+          "syllable": "sea-son",
           "ipa": "/'siːzn/",
           "zh": "季节",
           "level2": true
         },
         {
           "en": "winter",
+          "syllable": "win-ter",
           "ipa": "/'wɪntə(r)/",
           "zh": "冬天",
           "level2": true
@@ -654,6 +699,7 @@
         },
         {
           "en": "get together",
+          "syllable": "get to-geth-er",
           "ipa": "",
           "zh": "聚会",
           "level2": false
@@ -666,12 +712,14 @@
         },
         {
           "en": "summer",
+          "syllable": "sum-mer",
           "ipa": "/'sʌmə(r)/",
           "zh": "夏天",
           "level2": true
         },
         {
           "en": "autumn",
+          "syllable": "au-tumn",
           "ipa": "/'ɔːtəm/",
           "zh": "秋天",
           "level2": true

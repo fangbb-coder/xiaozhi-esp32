@@ -1636,7 +1636,7 @@ void Application::PlayEnglishAsset(const std::string& asset_name) {
 
 void Application::ShowEnglishStudyCard(const english_learning::StudyCard& card) {
     Board::GetInstance().GetDisplay()->ShowStudyCard(card.unit, card.index, card.word_count,
-                                                      card.word, card.spell, card.zh);
+                                                      card.word, card.spell, card.syllable, card.zh);
 }
 
 #endif  // CONFIG_ENGLISH_LEARNING_ENABLED

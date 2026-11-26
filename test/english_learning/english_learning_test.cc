@@ -115,6 +115,19 @@ void TestIntentParserStillGreen() {
     CHECK(ParseIntent("第三单元", 6).intent == Intent::kSelectUnit);
     CHECK(ParseIntent("第三单元", 6).unit == 3);
     CHECK(ParseIntent("下一个", 6).intent == Intent::kNext);
+    CHECK(ParseIntent("上一个", 6).intent == Intent::kPrev);
+    CHECK(ParseIntent("前一个", 6).intent == Intent::kPrev);
+    CHECK(ParseIntent("第三个", 6).intent == Intent::kGoto);
+    CHECK(ParseIntent("第三个", 6).word_index == 3);
+    CHECK(ParseIntent("第5个", 6).intent == Intent::kGoto);
+    CHECK(ParseIntent("第5个", 6).word_index == 5);
+    CHECK(ParseIntent("第一个", 6).intent == Intent::kGoto);
+    CHECK(ParseIntent("第一个", 6).word_index == 1);
+    CHECK(ParseIntent("最后一个", 6).intent == Intent::kGoto);
+    CHECK(ParseIntent("最后一个", 6).word_index == -1);
+    // 「第三个单元」是选单元，不是跳到第 3 个词
+    CHECK(ParseIntent("第三个单元", 6).intent == Intent::kSelectUnit);
+    CHECK(ParseIntent("第三个单元", 6).unit == 3);
     CHECK(ParseIntent("结束学习", 6).intent == Intent::kExit);
     CHECK(ParseIntent("有哪些单元", 6).intent == Intent::kListUnits);
     CHECK(ParseIntent("今天天气怎么样", 6).intent == Intent::kNone);
@@ -167,8 +180,9 @@ void TestFullScript() {
     CHECK(std::string(g_rec.cards[0].word) == "afternoon");
     CHECK(std::string(g_rec.cards[0].zh) == "下午");
     CHECK(std::string(g_rec.cards[0].spell) == "a-f-t-e-r-n-o-o-n");
+    CHECK(std::string(g_rec.cards[0].syllable) == "af-ter-noon");
     CHECK(!g_rec.cards[0].is_last);
-    // 播报顺序：词 -> 拼写 -> 中文
+    // 播报顺序：词 -> 拼写 -> 音节拼读 -> 中文（afternoon 是多音节词，多一段）
     CHECK(g_rec.played.size() == 1);
     CHECK(g_rec.played[0] == "en_u3_w01.ogg");
     g_rec.played.clear();
@@ -178,9 +192,13 @@ void TestFullScript() {
     g_rec.played.clear();
     Drain();
     CHECK(g_rec.played.size() == 1);
+    CHECK(g_rec.played[0] == "en_u3_w01_syll.ogg");
+    g_rec.played.clear();
+    Drain();
+    CHECK(g_rec.played.size() == 1);
     CHECK(g_rec.played[0] == "zh_u3_w01.ogg");
 
-    // 4b) 三段放完 -> 回到聆听（还没到最后一个词）
+    // 4b) 全部放完 -> 回到聆听（还没到最后一个词）
     g_rec.Clear();
     Drain();
     CHECK(g_rec.played.empty());
@@ -220,13 +238,16 @@ void TestFullScript() {
     Drain();
 
     // 7) 一路推到倒数第二个词
+    //    段数随词而变：多音节词多一段音节拼读（单词/拼写/音节/中文 = 4 段）
     for (int i = 2; i < 17; i++) {
         g_rec.Clear();
         CHECK(el.HandleUserText("下一个"));
         CHECK(el.current_index() == i);
-        Drain();
-        Drain();
-        Drain();
+        const WordEntry& w = kEnglishUnits[2].words[i];
+        const int segments = (w.syllable != nullptr && w.syllable[0] != '\0') ? 4 : 3;
+        for (int s = 0; s < segments; s++) {
+            Drain();
+        }
     }
     CHECK(el.current_index() == 16);
 
@@ -305,6 +326,62 @@ void TestQuestionHandsBackToServer() {
     CHECK(g_rec.listening.back());
 }
 
+void TestNavigation() {
+    printf("--- 词条导航 ---\n");
+    InstallHooks();
+    EnglishLearning& el = EnglishLearning::GetInstance();
+    g_rec.Clear();
+
+    CHECK(el.HandleUserText("开始学习英语单词"));
+    CHECK(el.HandleUserText("第三单元"));
+    CHECK(el.state() == State::kStudying);
+    CHECK(el.current_index() == 0);
+
+    // 「下一个」-> 第 2 个词
+    g_rec.Clear();
+    CHECK(el.HandleUserText("下一个"));
+    CHECK(el.current_index() == 1);
+    CHECK(g_rec.cards.size() == 1);
+    CHECK(g_rec.cards[0].index == 1);
+
+    // 「上一个」-> 退回第 1 个词
+    g_rec.Clear();
+    CHECK(el.HandleUserText("上一个"));
+    CHECK(el.current_index() == 0);
+    CHECK(g_rec.cards.size() == 1);
+    CHECK(g_rec.cards[0].index == 0);
+
+    // 「第三个」-> 第 3 个词（index 2）
+    g_rec.Clear();
+    CHECK(el.HandleUserText("第三个"));
+    CHECK(el.current_index() == 2);
+    CHECK(g_rec.cards[0].index == 2);
+
+    // 「第5个」-> 第 5 个词（index 4）
+    g_rec.Clear();
+    CHECK(el.HandleUserText("第5个"));
+    CHECK(el.current_index() == 4);
+    CHECK(g_rec.cards[0].index == 4);
+
+    // 「第一个」-> 回到开头
+    g_rec.Clear();
+    CHECK(el.HandleUserText("第一个"));
+    CHECK(el.current_index() == 0);
+
+    // 「最后一个」-> 末尾（Unit 3 有 18 个词 -> index 17）
+    g_rec.Clear();
+    CHECK(el.HandleUserText("最后一个"));
+    CHECK(el.current_index() == 17);
+    CHECK(g_rec.cards[0].is_last);
+
+    // 越界 -> 提示没听清，且不改变当前位置
+    g_rec.Clear();
+    CHECK(el.HandleUserText("第99个"));
+    CHECK(el.current_index() == 17);
+    CHECK(g_rec.played.size() == 1);
+    CHECK(g_rec.played[0] == "prompt_confused.ogg");
+}
+
 void TestListUnits() {
     printf("--- 单元列表 ---\n");
     const auto units = EnglishLearning::GetInstance().ListUnits();
@@ -326,6 +403,7 @@ int main() {
     TestFullScript();
     TestExitRestoresServer();
     TestQuestionHandsBackToServer();
+    TestNavigation();
     TestListUnits();
 
     printf("\n断言 %d 条，失败 %d 条\n", g_checks, g_failures);

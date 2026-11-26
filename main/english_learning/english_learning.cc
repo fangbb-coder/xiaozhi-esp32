@@ -23,6 +23,7 @@ const char* TAG __attribute__((unused)) = "EnglishLearning";
 /** 资源名后缀 */
 constexpr const char* kKindWord = "en";
 constexpr const char* kKindSpell = "en_spell";
+constexpr const char* kKindSyllable = "en_syll";
 constexpr const char* kKindZh = "zh";
 /** 提示语资源名 */
 constexpr const char* kPromptStart = "prompt_start.ogg";
@@ -78,7 +79,7 @@ int EnglishLearning::CurrentWordCount() const {
 }
 
 const WordEntry& EnglishLearning::CurrentWord() const {
-    static const WordEntry kEmpty = {"", "", "", 0, 0, 0};
+    static const WordEntry kEmpty = {"", "", "", "", 0, 0, 0, 0};
     if (unit_ < 1 || unit_ > static_cast<int>(kEnglishUnitCount)) {
         return kEmpty;
     }
@@ -95,6 +96,8 @@ std::string EnglishLearning::AssetName(int unit, int index, const char* kind) co
     // 拼读音频是 en_u3_w05_spell.ogg，词/中文是 en_u3_w05.ogg / zh_u3_w05.ogg。
     if (strcmp(kind, kKindSpell) == 0) {
         snprintf(buffer, sizeof(buffer), "en_u%d_w%02d_spell.ogg", unit, index + 1);
+    } else if (strcmp(kind, kKindSyllable) == 0) {
+        snprintf(buffer, sizeof(buffer), "en_u%d_w%02d_syll.ogg", unit, index + 1);
     } else {
         snprintf(buffer, sizeof(buffer), "%s_u%d_w%02d.ogg", kind, unit, index + 1);
     }
@@ -140,15 +143,47 @@ bool EnglishLearning::HandleUserText(const std::string& text) {
             }
             return false;
 
+        case Intent::kPrev:
+            if (state_ == State::kStudying) {
+                if (index_ > 0) {
+                    index_--;
+                }
+                // 已经是第一个词了也不报错，直接重播当前词
+                ShowCard();
+                PlayCurrentWord();
+                return true;
+            }
+            return false;
+
+        case Intent::kGoto:
+            if (state_ == State::kStudying) {
+                const int count = CurrentWordCount();
+                int target = parsed.word_index;
+                if (target == -1) {
+                    target = count;  // 「最后一个」
+                }
+                if (target < 1 || target > count) {
+                    // 越界：让设备反问，而不是装懂
+                    ESP_LOGW(TAG, "goto word %d out of range (count=%d)", target, count);
+                    EnqueueAndPlay({kPromptConfused}, AfterPlayback::kPromptFinished);
+                    return true;
+                }
+                index_ = target - 1;
+                ShowCard();
+                PlayCurrentWord();
+                return true;
+            }
+            return false;
+
         case Intent::kRepeat:
             if (state_ == State::kStudying) {
                 // 「好的，再读一遍」+ 当前词的三段，合成一条播放序列
                 std::vector<std::string> items = {kPromptRepeat};
                 const WordEntry& word = CurrentWord();
                 if (word.en != nullptr && word.en[0] != '\0') {
-                    items.push_back(AssetName(unit_, index_, kKindWord));
-                    items.push_back(AssetName(unit_, index_, kKindSpell));
-                    items.push_back(AssetName(unit_, index_, kKindZh));
+                    for (const std::string& name : BuildWordSequence(word)) {
+                        items.push_back(name);
+                    }
                 }
                 EnqueueAndPlay(std::move(items), AfterPlayback::kWordFinished);
                 return true;
@@ -220,9 +255,20 @@ void EnglishLearning::PlayCurrentWord() {
         ESP_LOGW(TAG, "no current word (unit=%d index=%d)", unit_, index_);
         return;
     }
-    EnqueueAndPlay({AssetName(unit_, index_, kKindWord), AssetName(unit_, index_, kKindSpell),
-                     AssetName(unit_, index_, kKindZh)},
-                    AfterPlayback::kWordFinished);
+    EnqueueAndPlay(BuildWordSequence(word), AfterPlayback::kWordFinished);
+}
+
+std::vector<std::string> EnglishLearning::BuildWordSequence(const WordEntry& word) const {
+    // 教学顺序：单词 → 字母拼读 → 音节拼读 → 汉语意思。
+    // 音节拼读只有多音节词才有（单音节词的 syllable 是空串，跳过这一段）。
+    std::vector<std::string> items;
+    items.push_back(AssetName(unit_, index_, kKindWord));
+    items.push_back(AssetName(unit_, index_, kKindSpell));
+    if (word.syllable != nullptr && word.syllable[0] != '\0') {
+        items.push_back(AssetName(unit_, index_, kKindSyllable));
+    }
+    items.push_back(AssetName(unit_, index_, kKindZh));
+    return items;
 }
 
 void EnglishLearning::AdvanceStep() {
@@ -301,6 +347,7 @@ void EnglishLearning::ShowCard() {
     card.word_count = count;
     card.word = word.en;
     card.spell = word.spell;
+    card.syllable = word.syllable;
     card.zh = word.zh;
     card.is_last = (count > 0 && index_ + 1 >= count);
     hooks_.show_card(card);

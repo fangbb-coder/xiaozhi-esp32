@@ -20,6 +20,8 @@ enum class Intent {
     kStart,        /**< 「开始学习英语单词」→ 进入选单元 */
     kSelectUnit,   /**< 「第三单元」→ 开始学某个单元 */
     kNext,         /**< 「下一个」→ 推进到下一个词 */
+    kPrev,         /**< 「上一个」→ 退回上一个词 */
+    kGoto,         /**< 「第三个」「第一个」「最后一个」→ 跳到指定词 */
     kRepeat,       /**< 「重复一遍」→ 重播当前词 */
     kExit,         /**< 「结束学习」→ 退出教学模式 */
     kListUnits,    /**< 「有哪些单元」→ 列出单元 */
@@ -29,6 +31,8 @@ enum class Intent {
 struct ParsedIntent {
     Intent intent = Intent::kNone;
     int unit = 0;  /**< 仅 kSelectUnit 有效，1..unit_count */
+    /** 仅 kGoto 有效：1-based 的词序号；-1 表示「最后一个」。0 表示未指定。 */
+    int word_index = 0;
 };
 
 /**
