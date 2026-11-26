@@ -473,3 +473,25 @@ LVGL 会自动回收这个 timer（`auto_delete` 默认 true），不用自己 `
 > 后来的改法先用 w64devkit g++ 写了个**最小样例**在本地验证语法
 > （`tools/tmp/lv_timer_probe.cc`，模拟 LVGL 的公开接口），
 > 确认能编过才推上去，省掉一轮 CI 往返。
+
+### 10.7 上板实测（2026-11-26）
+
+刷入 CI run #45737551030（sha `2573264`，app 镜像 3,618,240 B，余量 510 KB）后的开机日志：
+
+```
+I (3290) LcdDisplay: study selftest: latin40 'afternoon' 188x41
+I (3290) LcdDisplay: study selftest: latin26 187x25
+I (3290) LcdDisplay: study selftest: cjk48 '下午' 96x47
+```
+
+| 检查项 | 结果 |
+|---|---|
+| `Compressed fonts is used ...` 告警 | **0 条**（字体是 plain 位图，位图取得到） |
+| 三个自带字体的字宽 | 188 / 187 / 96 px，全部非零 |
+| E 级错误日志 | 0 条 |
+| 唤醒词模型 | `wn9_nihaoxiaozhi_tts`（你好小智，未变） |
+| assets 分区 | 1792 KB（混合包还在） |
+| MCP 工具 | `self.english_learning.list_units [user]` 已注册 |
+| 状态机 | `activating -> idle` |
+
+开机 2.5 秒后会自动闪一帧样例单词卡，1.5 秒后收回。
