@@ -110,7 +110,10 @@ jobs:
           python3 scripts/gen_english_audio_index.py \
             --assets main/assets/english \
             --output /tmp/english_audio_table.h
-          test "$(grep -c 'ogg_c0_start' /tmp/english_audio_table.h)" -eq 674
+          # 音频数量按目录里的实际 ogg 个数算，加音频后不用再改这里的数字。
+          # 每个 ogg 在索引里出现 2 次 ogg_c0_start（extern 声明 + 表格项）。
+          audio_count=$(ls main/assets/english/*.ogg | wc -l)
+          test "$(grep -c 'ogg_c0_start' /tmp/english_audio_table.h)" -eq $((audio_count * 2))
 
   idf-build:
     name: Build lichuang-dev-english
