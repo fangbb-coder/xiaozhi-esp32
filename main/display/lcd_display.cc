@@ -24,6 +24,8 @@
 LV_FONT_DECLARE(BUILTIN_TEXT_FONT);
 LV_FONT_DECLARE(BUILTIN_ICON_FONT);
 #if CONFIG_ENGLISH_LEARNING_ENABLED
+// 开机字体自检要用 lv_timer_create()，lv_timer.h 不在 lvgl.h 里，得单独引。
+#include <src/misc/lv_timer.h>
 // 学习卡片专用字体（由 tools/gen_study_fonts.py 生成，字符集按词表裁剪）
 // 标题 30px / 单词 40px / 拼读 26px / 汉语 48px，字号由脚本实测字宽后确定。
 LV_FONT_DECLARE(font_study_latin_30);
