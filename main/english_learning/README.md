@@ -69,7 +69,7 @@ af-ter-noon              <- 26px 自带拉丁字体（音节；单音节词这�
 - 文本一律 `LV_LABEL_LONG_MODE_CLIP`（单行，超宽就裁）：所有文本实测都能单行放下，
   折行只会把行高撑大。
 - 拼写串最长 27 字符（`o-f-f-i-c-e w-o-r-k-e-r`），26px 下实测 289.4px，单行放得下。
-- 音节串最长 18 字符（`de-liv-er-y work-er`），与拼写行共用 26px 字体，单行也放得下。
+- 音节串最长 19 字符（`de-liv-er-y work-er`）（26px 下实测 222px），与拼写行共用 26px 字体，单行也放得下。
 - 不显示音标：保留在 `pep4a_words.json` 里备用。
 
 ## 3. 发音
@@ -80,13 +80,13 @@ af-ter-noon              <- 26px 自带拉丁字体（音节；单音节词这�
 |---|---|---|
 | `en_u{u}_w{n}.ogg` | 单词读音 | 110 |
 | `en_u{u}_w{n}_spell.ogg` | 逐字母拼读 | 110 |
-| `en_u{u}_w{n}_syll.ogg` | 音节拼读（只有多音节词有） | 47 |
+| `en_u{u}_w{n}_syll.ogg` | 音节拼读（只有多音节词有） | 46 |
 | `zh_u{u}_w{n}.ogg` | 汉语意思 | 110 |
 | `prompt_*.ogg` | 7 条提示语 | 7 |
 
 - 格式：Ogg-Opus，mono，24000Hz 输入，8kbps 码率，20ms 一帧
   （满足 `main/audio/demuxer/ogg_demuxer.cc` 的全部约束）
-- 总体积 **658 KB**（音节拼读 47 段约 84 KB）
+- 总体积 **656.8 KB**（音节拼读 46 段约 84 KB）
 
 ### 3.1 播报编排
 
@@ -154,14 +154,14 @@ extern const char en_u3_w05_ogg_c2_start[] __asm__("_binary_main_assets_english_
 开机时会打一行自检日志，能看出用的是哪个候选、有多少音频可用：
 
 ```
-I (1234) EnglishAudio: 337/337 audio assets resolved via candidate 0, 598.0 KB total
+I (1234) EnglishAudio: 383/383 audio assets resolved via candidate 0, 656.8 KB total
 ```
 
 ## 5. 容量
 
 | 项 | 大小 |
 |---|---|
-| 音频（384 段） | 658 KB |
+| 音频（383 段） | 656.8 KB |
 | 词表头文件 `word_table.h` | 12 KB |
 | 音频索引表（flash 常量） | ~15 KB |
 | 卡片自带字体（4 个子集） | ~203 KB |
@@ -204,7 +204,7 @@ BLE 迎宾和英语学习**分成两个变体**，因为两者都要抢 app 分�
 | 文件 | 作用 |
 |---|---|
 | `main/english_learning/pep4a_words.json` | **唯一真相**：6 个单元 110 个词条 |
-| `main/assets/english/*.ogg` | 预生成的离线发音（337 个） |
+| `main/assets/english/*.ogg` | 预生成的离线发音（383 个） |
 | `main/english_learning/word_table.h` | 自动生成（构建时），已在 `.gitignore` |
 | `main/english_learning/english_audio_table.h` | 自动生成（构建时），已在 `.gitignore` |
 
@@ -259,7 +259,7 @@ app 镜像 **3,678,336 B**，分区上限 4,128,768 B，**余量 450,432 B**。
 I (220) Board: UUID=... SKU=lichuang-dev-english
 I (1220) MCP: Add tool: self.english_learning.list_units [user]
 I (1240) EnglishLearning: hooks installed (ready=1)
-I (1270) EnglishAudio: 337/337 audio assets resolved via candidate 0, 598.0 KB total
+I (1270) EnglishAudio: 383/383 audio assets resolved via candidate 0, 656.8 KB total
 ```
 
 `candidate 0` 命中，说明这台 IDF 的 `EMBED_FILES` 符号名就是「只取文件名」；
@@ -539,11 +539,13 @@ I (3290) LcdDisplay: study selftest: cjk48 '下午' 96x47
 单词  →  字母拼读  →  音节拼读  →  汉语意思
 ```
 
-- **只有多音节词有音节段**（110 词里 47 个）。单音节词的 `syllable` 是空串，
+- **只有多音节词有音节段**（110 词里 46 个）。单音节词的 `syllable` 是空串，
   跳过这一段 —— 单词读音本身就是它的音节拼读，再读一遍是噪音。
 - 音节数据来自用户提供的教材音节划分表，存在 `pep4a_words.json` 的 `syllable` 字段
   （单音节词不标这个字段）。
 - 屏幕单词卡多一行显示音节（`af-ter-noon`），与字母拼读行共用 26px 拉丁字体。
+- **`PE` 不标音节**：教材表里 `PE → P-E` 后面括注「字母组合」，意思是它不是音节拆分。
+  照标的话 PE 会先读字母拼读 P-E、再读一遍音节 P-E，等于重复一次，所以留空。
 
 **音节音频怎么合成的**：把音节串的连字符换成逗号再喂给 Edge TTS，
 `af-ter-noon` → `af, ter, noon`。逗号让 TTS 在音节之间留出听得出来的停顿；
@@ -552,4 +554,7 @@ I (3290) LcdDisplay: study selftest: cjk48 '下午' 96x47
 **字符集**：音节行和字母拼读行共用 26px 字体，所以 `tools/gen_study_fonts.py`
 会把音节用到的字符并进拉丁字符集（38 → 42 个字形，含音节里的 C / S / P 等大写字母）。
 
+**开机自检**：自检卡是完整的 5 行（单元 / 单词 / 字母拼读 / 音节 / 汉字），
+开机 2.5 秒闪一下 `afternoon / a-f-t-e-r-n-o-o-n / af-ter-noon / 下午`，1.5 秒后收回。
+日志里会多一行 `study selftest: latin26-syll` 量音节行的字宽。
 **测试**：主机侧断言 139 → 181 条。

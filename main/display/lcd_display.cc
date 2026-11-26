@@ -1366,6 +1366,7 @@ namespace {
 constexpr const char* kSelfTestUnit = "Unit 1    1 / 21";
 constexpr const char* kSelfTestWord = "afternoon";
 constexpr const char* kSelfTestSpell = "a-f-t-e-r-n-o-o-n";
+constexpr const char* kSelfTestSyllable = "af-ter-noon";
 constexpr const char* kSelfTestZh = "下午";
 
 // lv_timer_t 在 LVGL 公开头里只是前置声明（完整定义在 private 头），
@@ -1406,13 +1407,15 @@ void LcdDisplay::StartStudyFontSelfTest() {
 }
 
 void LcdDisplay::ShowStudySelfTestCard() {
-    if (study_card_ == nullptr || study_word_label_ == nullptr) {
+    if (study_card_ == nullptr || study_word_label_ == nullptr ||
+        study_syllable_label_ == nullptr) {
         return;
     }
 
     lv_label_set_text(study_unit_label_, kSelfTestUnit);
     lv_label_set_text(study_word_label_, kSelfTestWord);
     lv_label_set_text(study_spell_label_, kSelfTestSpell);
+    lv_label_set_text(study_syllable_label_, kSelfTestSyllable);
     lv_label_set_text(study_zh_label_, kSelfTestZh);
 
     // 量字宽：字形描述符坏了这里就是 0。
@@ -1424,6 +1427,10 @@ void LcdDisplay::ShowStudySelfTestCard() {
     lv_text_get_size(&size, kSelfTestSpell, &font_study_latin_26, 0, 0, 10000,
                      LV_TEXT_FLAG_NONE);
     ESP_LOGI(TAG, "study selftest: latin26 %dx%d", (int)size.x, (int)size.y);
+    lv_text_get_size(&size, kSelfTestSyllable, &font_study_latin_26, 0, 0, 10000,
+                     LV_TEXT_FLAG_NONE);
+    ESP_LOGI(TAG, "study selftest: latin26-syll '%s' %dx%d", kSelfTestSyllable,
+             (int)size.x, (int)size.y);
     lv_text_get_size(&size, kSelfTestZh, &font_study_cjk_48, 0, 0, 10000,
                      LV_TEXT_FLAG_NONE);
     ESP_LOGI(TAG, "study selftest: cjk48 '%s' %dx%d", kSelfTestZh, (int)size.x,
