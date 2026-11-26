@@ -495,3 +495,6 @@ I (3290) LcdDisplay: study selftest: cjk48 '下午' 96x47
 | 状态机 | `activating -> idle` |
 
 开机 2.5 秒后会自动闪一帧样例单词卡，1.5 秒后收回。
+
+> 项目级的完整排查方法（四层排查法 / 硬约束表 / 迭代法）见 `xiaozhi-esp32-doubao/README.md` §14.13；
+> 结构化经验条目见 `xiaozhi-esp32-doubao/.learnings/`。
