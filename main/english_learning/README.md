@@ -454,3 +454,22 @@ study selftest: cjk48 '下午' 96x47
 > 编译进 flash 的只有位图本体。四个字体实测合计约 **203 KB**（位图 196 KB + 描述符 7.4 KB）。
 > 判断占用要看 CI 报的 app image 大小，不是 .c 文件大小。
 
+### 10.6 LVGL v9 定时器的三个坑（2026-11-26）
+
+开机自检要延时回调，连着踩了三次，都是 CI 编译报错才暴露的：
+
+| 坑 | 现象 | 正确写法 |
+|---|---|---|
+| `lv_timer.h` 不在 `lvgl.h` 里 | `invalid use of incomplete type lv_timer_t` | 自己 `#include <src/misc/lv_timer.h>` |
+| `lv_timer_t` 在公开头里只是前置声明（完整定义在 private 头） | 访问 `timer->user_data` 报 incomplete type | 用 captureless lambda + 文件级静态指针传上下文 |
+| 捕获 `this` 的 lambda **不能**转成函数指针 | `cannot convert <lambda> to lv_timer_cb_t` | 只有 captureless lambda 能做这种转换（标准 [expr.prim.lambda]） |
+
+另外 `lv_timer_create` 默认 `repeat_count = -1`，也就是**无限重复**，不是一次性。
+要一次性就 `lv_timer_set_repeat_count(timer, 1)`：回调跑完 repeat_count 归零，
+LVGL 会自动回收这个 timer（`auto_delete` 默认 true），不用自己 `lv_timer_delete`，
+也就避开了「在回调里删自己」的悬垂风险。
+
+> 本机没有 ESP-IDF 工具链，编译只能走 CI，每轮往返 6 分钟。
+> 后来的改法先用 w64devkit g++ 写了个**最小样例**在本地验证语法
+> （`tools/tmp/lv_timer_probe.cc`，模拟 LVGL 的公开接口），
+> 确认能编过才推上去，省掉一轮 CI 往返。

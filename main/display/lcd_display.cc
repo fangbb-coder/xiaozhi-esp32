@@ -1353,6 +1353,12 @@ constexpr const char* kSelfTestWord = "afternoon";
 constexpr const char* kSelfTestSpell = "a-f-t-e-r-n-o-o-n";
 constexpr const char* kSelfTestZh = "下午";
 
+// lv_timer_t 在 LVGL 公开头里只是前置声明（完整定义在 private 头），
+// 读不到 timer->user_data；而捕获 this 的 lambda 又不能转成函数指针
+// （标准只允许 captureless lambda 做这种转换）。
+// 所以用文件级静态指针把 display 传给回调。
+LcdDisplay* g_selftest_display = nullptr;
+
 }  // namespace
 
 void LcdDisplay::StartStudyFontSelfTest() {
@@ -1363,18 +1369,22 @@ void LcdDisplay::StartStudyFontSelfTest() {
         return;
     }
 
+    g_selftest_display = this;
+
     // 等开机画面（AI logo）稳定后再闪。
     //
-    // 两个 LVGL v9 的坑：
-    // 1) lv_timer_t 在公开头里只是前置声明（完整定义在 private 头），
-    //    所以不能写 timer->user_data。改用捕获 this 的 lambda ——
-    //    有捕获的 lambda 同样能转成 lv_timer_cb_t 函数指针。
-    // 2) lv_timer_create 默认 repeat_count = -1（无限重复）。这里要的是
-    //    「只跑一次」：lv_timer_set_repeat_count(timer, 1) 之后，回调执行完
-    //    repeat_count 归零，LVGL 会自动回收这个 timer（auto_delete 默认 true），
-    //    不用自己 delete，也就没有「回调里删自己」的悬垂风险。
-    lv_timer_t* show_timer =
-        lv_timer_create([this](lv_timer_t*) { ShowStudySelfTestCard(); }, 2500, nullptr);
+    // lv_timer_create 默认 repeat_count = -1（无限重复）。这里要的是「只跑一次」：
+    // lv_timer_set_repeat_count(timer, 1) 之后，回调执行完 repeat_count 归零，
+    // LVGL 会自动回收这个 timer（auto_delete 默认 true），不用自己 delete，
+    // 也就没有「回调里删自己」的悬垂风险。
+    lv_timer_t* show_timer = lv_timer_create(
+        [](lv_timer_t*) {
+            auto* display = g_selftest_display;
+            if (display != nullptr) {
+                display->ShowStudySelfTestCard();
+            }
+        },
+        2500, nullptr);
     if (show_timer != nullptr) {
         lv_timer_set_repeat_count(show_timer, 1);
     }
@@ -1411,8 +1421,15 @@ void LcdDisplay::ShowStudySelfTestCard() {
     lv_obj_move_foreground(study_card_);
 
     // 闪一下就收回去，别一直占着屏幕。同样是一次性 timer。
-    lv_timer_t* hide_timer =
-        lv_timer_create([this](lv_timer_t*) { HideStudySelfTestCard(); }, 1500, nullptr);
+    lv_timer_t* hide_timer = lv_timer_create(
+        [](lv_timer_t*) {
+            auto* display = g_selftest_display;
+            g_selftest_display = nullptr;
+            if (display != nullptr) {
+                display->HideStudySelfTestCard();
+            }
+        },
+        1500, nullptr);
     if (hide_timer != nullptr) {
         lv_timer_set_repeat_count(hide_timer, 1);
     }
