@@ -446,12 +446,13 @@ nvs、assets、bootloader、分区表全部保留。脚本见项目目录 `scrip
 **生成脚本加硬断言**：产物里 `bitmap_format` 不是 0 就直接失败退出，
 不再依赖人肉记住命令参数。
 
-**开机自检**：开机 2.5 秒后自动渲染一帧样例单词卡（`afternoon` / `a-f-t-e-r-n-o-o-n` / `下午`），
+**开机自检**：开机 2.5 秒后自动渲染一帧样例单词卡（单元 / 单词 / 字母拼读 / 音节 / 汉字：`afternoon` / `a-f-t-e-r-n-o-o-n` / `af-ter-noon` / `下午`），
 1.5 秒后收回。日志会打：
 
 ```
-study selftest: latin40 'afternoon' 178x41
-study selftest: latin26 289x25
+study selftest: latin40 'afternoon' 188x41
+study selftest: latin26 187x25
+study selftest: latin26-syll 'af-ter-noon' 139x25
 study selftest: cjk48 '下午' 96x47
 ```
 
@@ -558,3 +559,28 @@ I (3290) LcdDisplay: study selftest: cjk48 '下午' 96x47
 开机 2.5 秒闪一下 `afternoon / a-f-t-e-r-n-o-o-n / af-ter-noon / 下午`，1.5 秒后收回。
 日志里会多一行 `study selftest: latin26-syll` 量音节行的字宽。
 **测试**：主机侧断言 139 → 181 条。
+
+### 10.9 本轮上板实测（2026-11-26，run #45745840507）
+
+刷入 CI run #45745840507（sha `e2279e7`，app 镜像 3,707,952 B，余量 411 KB）后的开机日志：
+
+```
+I (3290) LcdDisplay: study selftest: latin40 'afternoon' 188x41
+I (3290) LcdDisplay: study selftest: latin26 187x25
+I (3290) LcdDisplay: study selftest: latin26-syll 'af-ter-noon' 139x25
+I (3300) LcdDisplay: study selftest: cjk48 '下午' 96x47
+```
+
+| 检查项 | 结果 |
+|---|---|
+| `Compressed fonts is used ...` 告警 | **0 条** |
+| 四个自带字体的字宽 | 188 / 187 / 139 / 96 px，全部非零 |
+| E 级错误日志 | 0 条 |
+| 音频表 | `EnglishAudio: 383/383 audio assets resolved via candidate 0, 656.8 KB total` |
+| SKU | `lichuang-dev-english` |
+| MCP 工具 | `self.english_learning.list_units [user]` 已注册 |
+| 唤醒词模型 | `wn9_nihaoxiaozhi_tts`（未变） |
+| assets 分区 | 1792 KB（混合包还在） |
+
+音节行的 139px 在 320px 屏上绰绰有余（可用 304px）；最长的音节串
+`de-liv-er-y work-er` 实测 222px，也放得下。
