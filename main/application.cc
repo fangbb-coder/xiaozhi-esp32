@@ -241,7 +241,7 @@ void Application::Run() {
         MAIN_EVENT_NETWORK_CONNECTED | MAIN_EVENT_NETWORK_DISCONNECTED | MAIN_EVENT_TOGGLE_CHAT |
         MAIN_EVENT_START_LISTENING | MAIN_EVENT_STOP_LISTENING | MAIN_EVENT_ACTIVATION_DONE |
         MAIN_EVENT_STATE_CHANGED | MAIN_EVENT_PLAYBACK_DRAINED | MAIN_EVENT_STARTUP_HINT_TIMEOUT |
-        MAIN_EVENT_PROTOCOL_PENDING | MAIN_EVENT_ENGLISH_TIMEOUT;
+        MAIN_EVENT_PROTOCOL_PENDING;
 
     while (true) {
         auto bits = xEventGroupWaitBits(event_group_, ALL_EVENTS, pdTRUE, pdFALSE, portMAX_DELAY);
@@ -357,11 +357,6 @@ void Application::Run() {
         if (bits & MAIN_EVENT_STARTUP_HINT_TIMEOUT) {
             HideStartupWakeWordHint();
         }
-#if CONFIG_ENGLISH_LEARNING_ENABLED
-        if (bits & MAIN_EVENT_ENGLISH_TIMEOUT) {
-            HandleEnglishTimeoutEvent();
-        }
-#endif
         ShowStartupWakeWordHint();
     }
 }
@@ -1584,15 +1579,6 @@ void Application::InitializeEnglishLearning() {
         local_learning_active_ = suppress;
         ESP_LOGI(TAG, "server speech %s", suppress ? "suppressed" : "restored");
     };
-    hooks.set_timeout = [this](int ms, std::function<void()> callback) {
-        SetEnglishTimeout(ms, std::move(callback));
-    };
-    hooks.show_feedback = [this](const std::string& heard, const std::string& expected) {
-        ShowEnglishStudyFeedback(heard, expected);
-    };
-    hooks.show_summary = [this](int unit, int correct, int total) {
-        ShowEnglishStudySummary(unit, correct, total);
-    };
     hooks.set_idle = [this](const std::string& text) {
         auto display = Board::GetInstance().GetDisplay();
         // 收起全屏单词卡，回到普通界面
@@ -1650,60 +1636,7 @@ void Application::PlayEnglishAsset(const std::string& asset_name) {
 
 void Application::ShowEnglishStudyCard(const english_learning::StudyCard& card) {
     Board::GetInstance().GetDisplay()->ShowStudyCard(card.unit, card.index, card.word_count,
-                                                      card.word, card.spell, card.syllable, card.zh,
-                                                      card.practice);
-}
-
-void Application::ShowEnglishStudyFeedback(const std::string& heard,
-                                            const std::string& expected) {
-    Board::GetInstance().GetDisplay()->ShowStudyFeedback(heard.c_str(), expected.c_str());
-}
-
-void Application::ShowEnglishStudySummary(int unit, int correct, int total) {
-    Board::GetInstance().GetDisplay()->ShowStudySummary(unit, correct, total);
-}
-
-void Application::SetEnglishTimeout(int ms, std::function<void()> callback) {
-    english_timeout_callback_ = std::move(callback);
-    if (english_timeout_timer_ == nullptr) {
-        esp_timer_create_args_t timer_args = {
-            .callback =
-                [](void* arg) {
-                    auto app = static_cast<Application*>(arg);
-                    // esp_timer 的回调跑在 timer 任务里，不能直接动状态机，
-                    // 所以这里只置事件位；真正的回调由主线程执行。
-                    xEventGroupSetBits(app->event_group_, MAIN_EVENT_ENGLISH_TIMEOUT);
-                },
-            .arg = this,
-            .dispatch_method = ESP_TIMER_TASK,
-            .name = "english_timeout",
-            .skip_unhandled_events = false,
-        };
-        ESP_ERROR_CHECK(esp_timer_create(&timer_args, &english_timeout_timer_));
-    }
-    // 先停掉上一个还没触发的超时
-    esp_timer_stop(english_timeout_timer_);
-    xEventGroupClearBits(event_group_, MAIN_EVENT_ENGLISH_TIMEOUT);
-    if (ms <= 0) {
-        // 取消：回调清空，事件位即使已经置上了也没事可做
-        english_timeout_callback_ = nullptr;
-        return;
-    }
-    // 这里不用 ESP_ERROR_CHECK：定时器启停有竞态，失败只该记日志，不能把设备搞挂
-    esp_err_t err = esp_timer_start_once(english_timeout_timer_,
-                                          static_cast<uint64_t>(ms) * 1000ULL);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "english timeout start failed: %s", esp_err_to_name(err));
-    }
-}
-
-void Application::HandleEnglishTimeoutEvent() {
-    if (!english_timeout_callback_) {
-        return;
-    }
-    auto callback = english_timeout_callback_;
-    english_timeout_callback_ = nullptr;
-    callback();
+                                                      card.word, card.spell, card.syllable, card.zh);
 }
 
 #endif  // CONFIG_ENGLISH_LEARNING_ENABLED

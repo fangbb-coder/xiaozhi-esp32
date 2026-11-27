@@ -1230,14 +1230,11 @@ if(CONFIG_ENGLISH_LEARNING_ENABLED)
         "english_learning/english_learning.cc"
         "english_learning/english_audio.cc"
         "english_learning/intent_parser.cc"
-        "english_learning/word_match.cc"
         # 单词卡专用字体：字符集按词表裁剪，字号由 tools/gen_study_fonts.py 实测确定
         "english_learning/fonts/font_study_latin_30.c"
         "english_learning/fonts/font_study_latin_40.c"
         "english_learning/fonts/font_study_latin_26.c"
         "english_learning/fonts/font_study_cjk_48.c"
-        # 跟读纠错卡/单元总结卡用的界面文字（26px 中文子集）
-        "english_learning/fonts/font_study_cjk_26.c"
     )
     list(APPEND INCLUDE_DIRS "english_learning")
 endif()

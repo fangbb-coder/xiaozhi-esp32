@@ -45,25 +45,6 @@ protected:
     lv_obj_t* study_syllable_label_ = nullptr;
     lv_obj_t* study_zh_label_ = nullptr;
 
-    // 跟读纠错卡（覆盖在学习卡之上）
-    lv_obj_t* study_feedback_ = nullptr;
-    lv_obj_t* study_feedback_title_ = nullptr;
-    lv_obj_t* study_feedback_word_ = nullptr;
-    lv_obj_t* study_feedback_syllable_ = nullptr;
-    lv_obj_t* study_feedback_heard_ = nullptr;
-
-    // 单元总结卡（覆盖在学习卡之上）
-    lv_obj_t* study_summary_ = nullptr;
-    lv_obj_t* study_summary_unit_ = nullptr;
-    lv_obj_t* study_summary_count_ = nullptr;
-    lv_obj_t* study_summary_label_ = nullptr;
-    lv_obj_t* study_summary_praise_ = nullptr;
-
-    void CreateStudyFeedback();
-    void CreateStudySummary();
-    // 学习卡的五行内容：true=显示，false=隐藏（给纠错卡/总结卡腾地方）
-    void SetStudyContentVisible(bool visible);
-
     void InitializeLcdThemes();
     void ShowEmotion();
     // Must be called with the display lock held.
@@ -88,10 +69,7 @@ public:
     virtual bool SetEmotion(const char* emotion) override;
     virtual void SetChatMessage(const char* role, const char* content) override;
     virtual void ShowStudyCard(int unit, int index, int word_count, const char* word,
-                               const char* spell, const char* syllable, const char* zh,
-                               bool practice = false) override;
-    virtual void ShowStudyFeedback(const char* heard, const char* expected) override;
-    virtual void ShowStudySummary(int unit, int correct, int total) override;
+                               const char* spell, const char* syllable, const char* zh) override;
     virtual void HideStudyCard() override;
     virtual void RemoveChatMessage(const char* role, const char* content) override;
     virtual void ClearChatMessages() override;
