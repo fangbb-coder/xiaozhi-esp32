@@ -1638,6 +1638,7 @@ void LcdDisplay::ShowStudyFeedback(const char* heard, const char* expected) {
     lv_label_set_text(study_feedback_heard_, heard_line);
 
     lv_obj_remove_flag(study_feedback_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(study_card_, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(study_feedback_);
     lv_obj_move_foreground(study_card_);
     ESP_LOGI(TAG, "study feedback: '%s' vs '%s'", heard != nullptr ? heard : "",
@@ -1726,6 +1727,7 @@ void LcdDisplay::ShowStudySummary(int unit, int correct, int total) {
     lv_label_set_text(study_summary_count_, count_line);
 
     lv_obj_remove_flag(study_summary_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(study_card_, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(study_summary_);
     lv_obj_move_foreground(study_card_);
     ESP_LOGI(TAG, "study summary: unit %d, %d / %d", unit, correct, total);
