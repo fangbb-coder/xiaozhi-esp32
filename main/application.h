@@ -41,6 +41,7 @@
 #define MAIN_EVENT_PLAYBACK_DRAINED     (1 << 13)
 #define MAIN_EVENT_STARTUP_HINT_TIMEOUT (1 << 14)
 #define MAIN_EVENT_PROTOCOL_PENDING (1 << 15)
+#define MAIN_EVENT_ENGLISH_TIMEOUT  (1 << 16)
 
 enum AecMode {
     kAecOff,
@@ -166,6 +167,9 @@ private:
 #if CONFIG_ENGLISH_LEARNING_ENABLED
     bool local_learning_active_ = false;
     std::string pending_local_asset_;  // 等待状态切到 Speaking 之后再真正播放的本地音频
+    // 跟读环节的超时兜底：esp_timer 只负责置事件位，真正的回调在主线程跑
+    esp_timer_handle_t english_timeout_timer_ = nullptr;
+    std::function<void()> english_timeout_callback_;
 #endif
     int clock_ticks_ = 0;
     TaskHandle_t activation_task_handle_ = nullptr;
@@ -197,6 +201,17 @@ private:
     void HandleEnglishUserText(const std::string& text);
     void PlayEnglishAsset(const std::string& asset_name);
     void ShowEnglishStudyCard(const english_learning::StudyCard& card);
+    void ShowEnglishStudyFeedback(const std::string& heard, const std::string& expected);
+    void ShowEnglishStudySummary(int unit, int correct, int total);
+    /**
+     * @brief 装一个超时定时器（毫秒）
+     *
+     * ms <= 0 表示取消。每次调用会替换掉上一个还没触发的定时器。
+     * esp_timer 的回调在 timer 任务里，不能直接动状态机，
+     * 所以它只置一个事件位，真正的回调由主线程执行。
+     */
+    void SetEnglishTimeout(int ms, std::function<void()> callback);
+    void HandleEnglishTimeoutEvent();
 #endif
 
     // Activation task (runs in background)

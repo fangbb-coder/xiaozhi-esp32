@@ -53,7 +53,8 @@ public:
     // Displays the English word, its letter-by-letter spelling and the Chinese
     // meaning on separate lines. Displays without a study card ignore it.
     virtual void ShowStudyCard(int unit, int index, int word_count, const char* word,
-                               const char* spell, const char* syllable, const char* zh) {
+                               const char* spell, const char* syllable, const char* zh,
+                               bool practice = false) {
         (void)unit;
         (void)index;
         (void)word_count;
@@ -61,6 +62,18 @@ public:
         (void)spell;
         (void)syllable;
         (void)zh;
+        (void)practice;
+    }
+    // 跟读纠错卡：显示孩子读到了什么，以及正确读法。
+    virtual void ShowStudyFeedback(const char* heard, const char* expected) {
+        (void)heard;
+        (void)expected;
+    }
+    // 单元总结卡：显示本单元读对了几个单词。
+    virtual void ShowStudySummary(int unit, int correct, int total) {
+        (void)unit;
+        (void)correct;
+        (void)total;
     }
     // Hide the study card again and go back to the normal chat layout.
     virtual void HideStudyCard() {}

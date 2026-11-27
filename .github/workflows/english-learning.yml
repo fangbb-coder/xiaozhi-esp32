@@ -73,6 +73,17 @@ jobs:
             -o /tmp/intent_test
           /tmp/intent_test
 
+      - name: Compile and run word match test
+        run: |
+          set -euo pipefail
+          # 跟读判定：归一化 + 编辑距离。纯逻辑，不依赖 ESP-IDF。
+          g++ -std=c++17 -Wall -Wextra -Werror -O2 \
+            -I main/english_learning \
+            test/english_learning/word_match_test.cc \
+            main/english_learning/word_match.cc \
+            -o /tmp/word_match_test
+          /tmp/word_match_test
+
       - name: Compile and run learning state machine test
         run: |
           set -euo pipefail
@@ -93,6 +104,7 @@ jobs:
             main/english_learning/english_learning.cc \
             main/english_learning/english_audio.cc \
             main/english_learning/intent_parser.cc \
+            main/english_learning/word_match.cc \
             -o /tmp/english_learning_test
           /tmp/english_learning_test
 

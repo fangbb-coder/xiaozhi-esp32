@@ -32,6 +32,7 @@ LV_FONT_DECLARE(font_study_latin_30);
 LV_FONT_DECLARE(font_study_latin_40);
 LV_FONT_DECLARE(font_study_latin_26);
 LV_FONT_DECLARE(font_study_cjk_48);
+LV_FONT_DECLARE(font_study_cjk_26);
 #endif
 LV_FONT_DECLARE(font_material_symbols_30_4);
 LV_FONT_DECLARE(font_noto_emoji_30_4);
@@ -1466,7 +1467,8 @@ void LcdDisplay::HideStudySelfTestCard() {
 #endif  // CONFIG_ENGLISH_LEARNING_ENABLED
 
 void LcdDisplay::ShowStudyCard(int unit, int index, int word_count, const char* word,
-                               const char* spell, const char* syllable, const char* zh) {
+                               const char* spell, const char* syllable, const char* zh,
+                               bool practice) {
     if (!SupportsGuiOperations() || !setup_ui_called_) {
         ESP_LOGW(TAG, "ShowStudyCard() called before SetupUI()");
         return;
@@ -1477,6 +1479,15 @@ void LcdDisplay::ShowStudyCard(int unit, int index, int word_count, const char* 
         return;
     }
 
+    // 纠错卡/总结卡要收起来，把五行内容放回去
+    if (study_feedback_ != nullptr) {
+        lv_obj_add_flag(study_feedback_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (study_summary_ != nullptr) {
+        lv_obj_add_flag(study_summary_, LV_OBJ_FLAG_HIDDEN);
+    }
+    SetStudyContentVisible(true);
+
     char header[48];
     snprintf(header, sizeof(header), "Unit %d    %d / %d", unit, index + 1, word_count);
     lv_label_set_text(study_unit_label_, header);
@@ -1484,6 +1495,23 @@ void LcdDisplay::ShowStudyCard(int unit, int index, int word_count, const char* 
     lv_label_set_text(study_spell_label_, spell != nullptr ? spell : "");
     lv_label_set_text(study_syllable_label_, syllable != nullptr ? syllable : "");
     lv_label_set_text(study_zh_label_, zh != nullptr ? zh : "");
+
+    /*
+     * 跟读态的视觉提示：音节行铺一条黄底，孩子照着屏幕上的拆分读整个词。
+     * 单音节词没有拆分可指，就把大单词本身染成橙色，一样能看出「轮到你」。
+     */
+    const bool has_syllable = (syllable != nullptr && syllable[0] != '\0');
+    if (practice) {
+        lv_obj_set_style_text_color(study_word_label_, lv_color_hex(0xB45309), 0);
+        lv_obj_set_style_bg_color(study_syllable_label_, lv_color_hex(0xFFF3C4), 0);
+        lv_obj_set_style_bg_opa(study_syllable_label_,
+                                has_syllable ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+        lv_obj_set_style_pad_ver(study_syllable_label_, has_syllable ? 2 : 0, 0);
+    } else {
+        lv_obj_set_style_text_color(study_word_label_, lv_color_hex(0x000000), 0);
+        lv_obj_set_style_bg_opa(study_syllable_label_, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_pad_ver(study_syllable_label_, 0, 0);
+    }
 
     lv_obj_remove_flag(study_card_, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(study_card_);
@@ -1504,6 +1532,203 @@ void LcdDisplay::ShowStudyCard(int unit, int index, int word_count, const char* 
                  (int)lv_obj_get_y(study_zh_label_));
     }
 #endif
+}
+
+void LcdDisplay::SetStudyContentVisible(bool visible) {
+    lv_obj_t* labels[] = {study_unit_label_, study_word_label_, study_spell_label_,
+                          study_syllable_label_, study_zh_label_};
+    for (lv_obj_t* label : labels) {
+        if (label == nullptr) {
+            continue;
+        }
+        if (visible) {
+            lv_obj_remove_flag(label, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(label, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+}
+
+/*
+ * 纠错卡：孩子读错时显示。
+ *
+ * 上半屏给正确读法（大字 + 音节拆分），下半屏用红字写「你读到的是 …」。
+ * 动态内容只上屏、不进语音 —— 发音永远是提前烘好的标准音频。
+ */
+void LcdDisplay::CreateStudyFeedback() {
+    if (study_feedback_ != nullptr || study_card_ == nullptr) {
+        return;
+    }
+    study_feedback_ = lv_obj_create(study_card_);
+    lv_obj_set_size(study_feedback_, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_style_radius(study_feedback_, 0, 0);
+    lv_obj_set_style_border_width(study_feedback_, 0, 0);
+    lv_obj_set_style_pad_all(study_feedback_, 0, 0);
+    lv_obj_set_style_shadow_width(study_feedback_, 0, 0);
+    lv_obj_set_style_bg_color(study_feedback_, lv_color_hex(0xFFF7F7), 0);
+    lv_obj_set_style_bg_opa(study_feedback_, LV_OPA_COVER, 0);
+    lv_obj_set_scrollbar_mode(study_feedback_, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_remove_flag(study_feedback_, LV_OBJ_FLAG_SCROLLABLE);
+
+    const int line_width = LV_HOR_RES - 16;
+
+    study_feedback_title_ = lv_label_create(study_feedback_);
+    lv_obj_set_width(study_feedback_title_, line_width);
+    lv_obj_set_style_text_font(study_feedback_title_, &font_study_cjk_26, 0);
+    lv_obj_set_style_text_color(study_feedback_title_, lv_color_hex(0x6B7280), 0);
+    lv_obj_set_style_text_align(study_feedback_title_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(study_feedback_title_, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_align(study_feedback_title_, LV_ALIGN_TOP_MID, 0, 104);
+    lv_label_set_text(study_feedback_title_, "正确读法");
+
+    study_feedback_word_ = lv_label_create(study_feedback_);
+    lv_obj_set_width(study_feedback_word_, line_width);
+    lv_obj_set_style_text_font(study_feedback_word_, &font_study_latin_40, 0);
+    lv_obj_set_style_text_color(study_feedback_word_, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_text_align(study_feedback_word_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(study_feedback_word_, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_align(study_feedback_word_, LV_ALIGN_TOP_MID, 0, 134);
+    lv_label_set_text(study_feedback_word_, "");
+
+    study_feedback_syllable_ = lv_label_create(study_feedback_);
+    lv_obj_set_width(study_feedback_syllable_, line_width);
+    lv_obj_set_style_text_font(study_feedback_syllable_, &font_study_latin_26, 0);
+    lv_obj_set_style_text_color(study_feedback_syllable_, lv_color_hex(0x6B7280), 0);
+    lv_obj_set_style_text_align(study_feedback_syllable_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(study_feedback_syllable_, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_align(study_feedback_syllable_, LV_ALIGN_TOP_MID, 0, 180);
+    lv_label_set_text(study_feedback_syllable_, "");
+
+    study_feedback_heard_ = lv_label_create(study_feedback_);
+    lv_obj_set_width(study_feedback_heard_, line_width);
+    lv_obj_set_style_text_font(study_feedback_heard_, &font_study_cjk_26, 0);
+    lv_obj_set_style_text_color(study_feedback_heard_, lv_color_hex(0xDC2626), 0);
+    lv_obj_set_style_text_align(study_feedback_heard_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(study_feedback_heard_, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_align(study_feedback_heard_, LV_ALIGN_TOP_MID, 0, 208);
+    lv_label_set_text(study_feedback_heard_, "");
+
+    lv_obj_add_flag(study_feedback_, LV_OBJ_FLAG_HIDDEN);
+}
+
+void LcdDisplay::ShowStudyFeedback(const char* heard, const char* expected) {
+    if (!SupportsGuiOperations() || !setup_ui_called_) {
+        ESP_LOGW(TAG, "ShowStudyFeedback() called before SetupUI()");
+        return;
+    }
+    DisplayLockGuard lock(this);
+    CreateStudyCard();
+    CreateStudyFeedback();
+    if (study_feedback_ == nullptr) {
+        return;
+    }
+    if (study_summary_ != nullptr) {
+        lv_obj_add_flag(study_summary_, LV_OBJ_FLAG_HIDDEN);
+    }
+    SetStudyContentVisible(false);
+
+    lv_label_set_text(study_feedback_word_, expected != nullptr ? expected : "");
+    // 音节拆分沿用学习卡上那一行，不用再传一遍
+    if (study_syllable_label_ != nullptr) {
+        lv_label_set_text(study_feedback_syllable_, lv_label_get_text(study_syllable_label_));
+    }
+    char heard_line[96];
+    snprintf(heard_line, sizeof(heard_line), "你读到的是 %s",
+             heard != nullptr ? heard : "");
+    lv_label_set_text(study_feedback_heard_, heard_line);
+
+    lv_obj_remove_flag(study_feedback_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(study_feedback_);
+    lv_obj_move_foreground(study_card_);
+    ESP_LOGI(TAG, "study feedback: '%s' vs '%s'", heard != nullptr ? heard : "",
+             expected != nullptr ? expected : "");
+}
+
+/* 单元总结卡：读对了几个单词 + 一句鼓励 */
+void LcdDisplay::CreateStudySummary() {
+    if (study_summary_ != nullptr || study_card_ == nullptr) {
+        return;
+    }
+    study_summary_ = lv_obj_create(study_card_);
+    lv_obj_set_size(study_summary_, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_style_radius(study_summary_, 0, 0);
+    lv_obj_set_style_border_width(study_summary_, 0, 0);
+    lv_obj_set_style_pad_all(study_summary_, 0, 0);
+    lv_obj_set_style_shadow_width(study_summary_, 0, 0);
+    lv_obj_set_style_bg_color(study_summary_, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_bg_opa(study_summary_, LV_OPA_COVER, 0);
+    lv_obj_set_scrollbar_mode(study_summary_, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_remove_flag(study_summary_, LV_OBJ_FLAG_SCROLLABLE);
+
+    const int line_width = LV_HOR_RES - 16;
+
+    study_summary_unit_ = lv_label_create(study_summary_);
+    lv_obj_set_width(study_summary_unit_, line_width);
+    lv_obj_set_style_text_font(study_summary_unit_, &font_study_latin_30, 0);
+    lv_obj_set_style_text_color(study_summary_unit_, lv_color_hex(0x6B7280), 0);
+    lv_obj_set_style_text_align(study_summary_unit_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(study_summary_unit_, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_align(study_summary_unit_, LV_ALIGN_TOP_MID, 0, 44);
+    lv_label_set_text(study_summary_unit_, "");
+
+    study_summary_count_ = lv_label_create(study_summary_);
+    lv_obj_set_width(study_summary_count_, line_width);
+    lv_obj_set_style_text_font(study_summary_count_, &font_study_latin_40, 0);
+    lv_obj_set_style_text_color(study_summary_count_, lv_color_hex(0x15803D), 0);
+    lv_obj_set_style_text_align(study_summary_count_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(study_summary_count_, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_align(study_summary_count_, LV_ALIGN_TOP_MID, 0, 90);
+    lv_label_set_text(study_summary_count_, "");
+
+    study_summary_label_ = lv_label_create(study_summary_);
+    lv_obj_set_width(study_summary_label_, line_width);
+    lv_obj_set_style_text_font(study_summary_label_, &font_study_cjk_26, 0);
+    lv_obj_set_style_text_color(study_summary_label_, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_text_align(study_summary_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(study_summary_label_, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_align(study_summary_label_, LV_ALIGN_TOP_MID, 0, 152);
+    lv_label_set_text(study_summary_label_, "读对的单词数");
+
+    study_summary_praise_ = lv_label_create(study_summary_);
+    lv_obj_set_width(study_summary_praise_, line_width);
+    lv_obj_set_style_text_font(study_summary_praise_, &font_study_cjk_26, 0);
+    lv_obj_set_style_text_color(study_summary_praise_, lv_color_hex(0xB45309), 0);
+    lv_obj_set_style_text_align(study_summary_praise_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(study_summary_praise_, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_align(study_summary_praise_, LV_ALIGN_TOP_MID, 0, 196);
+    lv_label_set_text(study_summary_praise_, "太棒了！");
+
+    lv_obj_add_flag(study_summary_, LV_OBJ_FLAG_HIDDEN);
+}
+
+void LcdDisplay::ShowStudySummary(int unit, int correct, int total) {
+    if (!SupportsGuiOperations() || !setup_ui_called_) {
+        ESP_LOGW(TAG, "ShowStudySummary() called before SetupUI()");
+        return;
+    }
+    DisplayLockGuard lock(this);
+    CreateStudyCard();
+    CreateStudySummary();
+    if (study_summary_ == nullptr) {
+        return;
+    }
+    if (study_feedback_ != nullptr) {
+        lv_obj_add_flag(study_feedback_, LV_OBJ_FLAG_HIDDEN);
+    }
+    SetStudyContentVisible(false);
+
+    char unit_line[32];
+    snprintf(unit_line, sizeof(unit_line), "Unit %d", unit);
+    lv_label_set_text(study_summary_unit_, unit_line);
+
+    char count_line[32];
+    snprintf(count_line, sizeof(count_line), "%d / %d", correct, total);
+    lv_label_set_text(study_summary_count_, count_line);
+
+    lv_obj_remove_flag(study_summary_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(study_summary_);
+    lv_obj_move_foreground(study_card_);
+    ESP_LOGI(TAG, "study summary: unit %d, %d / %d", unit, correct, total);
 }
 
 void LcdDisplay::HideStudyCard() {

@@ -1,12 +1,34 @@
 /**
  * @file english_learning.cc
  * @brief 英语单词学习的设备端状态机
+ *
+ * 状态流转
+ * --------
+ *   kIdle ──「开始学习英语单词」──▶ kChoosingUnit ──「第三单元」──▶ kStudying
+ *                                                                      │
+ *                            词的三段播完 ◀───────────────────────────┘
+ *                                 │
+ *                                 ▼
+ *                            kPractice ──读对了──▶ kConfirmNext ──「下一个」──▶ kStudying(下一个词)
+ *                                 │                        │
+ *                                 │ 读错了                 │ 超时
+ *                                 ▼                        ▼
+ *                            kPracticeRetry          下一个词
+ *                                 │
+ *              连续 2 次读不出 ────┴──▶ 播正确读法 ──▶ 还有 1 次机会
+ *                                 │
+ *                       3 次机会用完
+ *                                 ▼
+ *                            放过这个词 ──▶ kConfirmNext
+ *
+ *   最后一个词读对（或放过）──▶ kUnitSummary ──鼓掌+鼓励──▶ 回待机
  */
 
 #include "english_learning.h"
 
 #include "english_audio.h"
 #include "intent_parser.h"
+#include "word_match.h"
 #include "word_table.h"
 
 #include <esp_log.h>
@@ -25,14 +47,37 @@ constexpr const char* kKindWord = "en";
 constexpr const char* kKindSpell = "en_spell";
 constexpr const char* kKindSyllable = "en_syll";
 constexpr const char* kKindZh = "zh";
+
 /** 提示语资源名 */
 constexpr const char* kPromptStart = "prompt_start.ogg";
 constexpr const char* kPromptAskUnit = "prompt_ask_unit.ogg";
 constexpr const char* kPromptListUnits = "prompt_list_units.ogg";
-constexpr const char* kPromptUnitDone = "prompt_unit_done.ogg";
 constexpr const char* kPromptRepeat = "prompt_repeat.ogg";
 constexpr const char* kPromptConfused = "prompt_confused.ogg";
 constexpr const char* kPromptExit = "prompt_exit.ogg";
+
+/** 跟读环节的提示语 */
+constexpr const char* kPromptPractice = "prompt_practice.ogg";   // 「请跟我读一遍。」
+constexpr const char* kPromptTryAgain = "prompt_try_again.ogg";  // 「没关系，再试一次。」
+constexpr const char* kPromptCorrect = "prompt_correct.ogg";      // 「听一听正确的读法。」
+constexpr const char* kPromptNextQ = "prompt_next_q.ogg";         // 「要继续下一个吗？」
+constexpr const char* kPromptGiveUp = "prompt_giveup.ogg";        // 「这个词先放一放，我们继续。」
+constexpr const char* kPromptLastWord = "prompt_last_word.ogg";  // 「这是最后一个词啦，加油！」
+constexpr const char* kPromptUnitPraise = "prompt_unit_praise.ogg";
+constexpr const char* kPromptSummary = "prompt_summary.ogg";
+constexpr const char* kApplause = "applause.ogg";
+
+/** 鼓励语轮换表：每次都说同一句太机械 */
+constexpr const char* const kPraiseAssets[] = {
+    "praise_1.ogg", "praise_2.ogg", "praise_3.ogg", "praise_4.ogg",
+};
+
+/** 等孩子开口跟读的超时 */
+constexpr int kPracticeTimeoutMs = 15000;
+/** 等孩子回答「要不要继续」的超时 */
+constexpr int kConfirmTimeoutMs = 20000;
+/** 每个词最多给几次机会 */
+constexpr int kMaxAttempts = 3;
 
 /**
  * @brief 判断一句话是不是在提问
@@ -90,6 +135,16 @@ const WordEntry& EnglishLearning::CurrentWord() const {
     return unit.words[index_];
 }
 
+std::string EnglishLearning::CurrentWordText() const {
+    const WordEntry& word = CurrentWord();
+    return (word.en != nullptr) ? std::string(word.en) : std::string();
+}
+
+bool EnglishLearning::IsLastWord() const {
+    const int count = CurrentWordCount();
+    return count > 0 && index_ + 1 >= count;
+}
+
 std::string EnglishLearning::AssetName(int unit, int index, const char* kind) const {
     char buffer[48];
     // 词表里的序号是 1-based，资源名也用 1-based，和音频生成脚本保持一致。
@@ -107,6 +162,15 @@ std::string EnglishLearning::AssetName(int unit, int index, const char* kind) co
 bool EnglishLearning::HandleUserText(const std::string& text) {
     if (!hooks_ready_) {
         return false;
+    }
+
+    // 跟读态和「是否继续」态里，用户说的这句话是「答案」而不是「指令」。
+    // 这两个状态单独处理：先跟目标词比对，再看是不是指令。
+    if (state_ == State::kPractice || state_ == State::kPracticeRetry) {
+        return HandlePracticeText(text);
+    }
+    if (state_ == State::kConfirmNext) {
+        return HandleConfirmText(text);
     }
 
     ParsedIntent parsed = ParseIntent(text, static_cast<int>(kEnglishUnitCount));
@@ -134,7 +198,8 @@ bool EnglishLearning::HandleUserText(const std::string& text) {
 
         case Intent::kNext:
             if (state_ == State::kStudying) {
-                AdvanceStep();
+                // 学习途中喊「下一个」：跳过当前词，直接进下一个
+                AdvanceToNextWord();
                 return true;
             }
             if (state_ == State::kChoosingUnit) {
@@ -228,10 +293,238 @@ bool EnglishLearning::HandleUserText(const std::string& text) {
     return true;
 }
 
+/* ---------------- 跟读环节 ---------------- */
+
+bool EnglishLearning::HandlePracticeText(const std::string& text) {
+    const std::string target = CurrentWordText();
+    ESP_LOGI(TAG, "practice text='%s' target='%s' attempt=%d", text.c_str(), target.c_str(),
+             attempt_);
+
+    // 第一步：先跟目标词比对。
+    // 顺序不能反：词表里真有一个词叫 "now"，孩子读对了它，
+    // 不能被当成别的指令给截胡。
+    const MatchResult result = MatchSpoken(target, text);
+    if (result == MatchResult::kExact || result == MatchResult::kClose) {
+        OnPracticeCorrect();
+        return true;
+    }
+
+    // 第二步：不是读词，那看看是不是指令。
+    ParsedIntent parsed = ParseIntent(text, static_cast<int>(kEnglishUnitCount));
+    switch (parsed.intent) {
+        case Intent::kNext:
+            // 「下一个」：不等鼓励也不问要不要继续，直接进下一个词
+            ESP_LOGI(TAG, "skip to next word");
+            CancelTimeout();
+            AdvanceToNextWord();
+            return true;
+        case Intent::kRepeat:
+            // 「再读一遍」：重播这个词的三段，然后继续跟读
+            CancelTimeout();
+            attempt_ = 0;
+            EnqueueAndPlay(BuildWordSequence(CurrentWord()), AfterPlayback::kWordFinished);
+            return true;
+        case Intent::kExit:
+            Exit(true);
+            return true;
+        default:
+            break;
+    }
+
+    // 第三步：改问别的了？把这一轮交回服务端。
+    if (LooksLikeQuestion(text)) {
+        ESP_LOGI(TAG, "question detected during practice, handing the turn back");
+        Exit(false);
+        return false;
+    }
+
+    // 都不是：算一次没读出来
+    RegisterPracticeMiss(text, result == MatchResult::kEmpty ? "empty" : "wrong");
+    return true;
+}
+
+bool EnglishLearning::HandleConfirmText(const std::string& text) {
+    ParsedIntent parsed = ParseIntent(text, static_cast<int>(kEnglishUnitCount));
+    ESP_LOGI(TAG, "confirm text='%s' intent=%s", text.c_str(), IntentName(parsed.intent));
+
+    switch (parsed.intent) {
+        case Intent::kNext:
+            CancelTimeout();
+            AdvanceToNextWord();
+            return true;
+        case Intent::kRepeat:
+            // 想再听一遍这个词：重播，然后回到跟读
+            CancelTimeout();
+            attempt_ = 0;
+            EnqueueAndPlay(BuildWordSequence(CurrentWord()), AfterPlayback::kWordFinished);
+            return true;
+        case Intent::kExit:
+            Exit(true);
+            return true;
+        default:
+            break;
+    }
+
+    if (LooksLikeQuestion(text)) {
+        Exit(false);
+        return false;
+    }
+
+    // 没听清：再问一遍「要继续下一个吗」
+    EnqueueAndPlay({kPromptNextQ}, AfterPlayback::kConfirmNextFinished);
+    return true;
+}
+
+void EnglishLearning::OnPracticeCorrect() {
+    correct_count_++;
+    CancelTimeout();
+    ESP_LOGI(TAG, "practice correct: %d / %d", correct_count_, CurrentWordCount());
+
+    // 读对了：撤掉音节行的跟读高亮
+    ShowCard(false);
+
+    if (IsLastWord()) {
+        // 最后一个词：读完直接进总结，不再问「要不要继续」
+        SetState(State::kUnitSummary);
+        EnqueueAndPlay({NextPraiseAsset()}, AfterPlayback::kLastPraiseFinished);
+        return;
+    }
+    SetState(State::kConfirmNext);
+    EnqueueAndPlay({NextPraiseAsset(), kPromptNextQ}, AfterPlayback::kPraiseFinished);
+}
+
+void EnglishLearning::RegisterPracticeMiss(const std::string& heard, const char* why) {
+    // why 只出现在日志里；主机侧测试的 esp_log.h 是空宏，这里显式消掉未使用告警。
+    static_cast<void>(why);
+    attempt_++;
+    ESP_LOGI(TAG, "practice miss #%d (%s) word='%s' heard='%s'", attempt_, why,
+             CurrentWordText().c_str(), heard.c_str());
+
+    if (attempt_ >= kMaxAttempts) {
+        // 三次机会用完：放过这个词，绝不把孩子卡在这儿
+        EnqueueAndPlay({kPromptGiveUp}, AfterPlayback::kGiveUpFinished);
+        return;
+    }
+    if (attempt_ == 2) {
+        // 连续两次读不出来：给一次正确读法，再给最后一次机会。
+        // 顺便把纠错卡亮出来：屏幕上能看到「你读到的是 X」。
+        if (hooks_.show_feedback) {
+            hooks_.show_feedback(heard, CurrentWordText());
+        }
+        std::vector<std::string> items = {kPromptCorrect, AssetName(unit_, index_, kKindWord)};
+        EnqueueAndPlay(std::move(items), AfterPlayback::kCorrectFinished);
+        return;
+    }
+    // 第一次：只请重试，不批评
+    EnqueueAndPlay({kPromptTryAgain}, AfterPlayback::kTryAgainFinished);
+}
+
+void EnglishLearning::GiveUpCurrentWord() {
+    CancelTimeout();
+    if (IsLastWord()) {
+        AfterLastWordDone();
+        return;
+    }
+    SetState(State::kConfirmNext);
+    EnqueueAndPlay({kPromptNextQ}, AfterPlayback::kConfirmNextFinished);
+}
+
+void EnglishLearning::AdvanceToNextWord() {
+    const int count = CurrentWordCount();
+    if (count <= 0) {
+        return;
+    }
+    if (index_ + 1 >= count) {
+        // 已经是最后一个词了：直接进单元总结
+        AfterLastWordDone();
+        return;
+    }
+    index_++;
+    SetState(State::kStudying);
+    ShowCard();
+    PlayCurrentWord();
+}
+
+void EnglishLearning::AfterLastWordDone() {
+    if (summary_started_) {
+        // 已经总结过一次了：别再鼓掌一次
+        return;
+    }
+    summary_started_ = true;
+    CancelTimeout();
+    SetState(State::kUnitSummary);
+    ESP_LOGI(TAG, "unit %d finished, correct=%d/%d", unit_, correct_count_, CurrentWordCount());
+    // 总结卡上屏（只上屏，不念数字 —— 数字是动态的，语音里没有）
+    if (hooks_.show_summary) {
+        hooks_.show_summary(unit_, correct_count_, CurrentWordCount());
+    }
+    // 顺序：先报「数一数」（总结卡同时上屏）→ 鼓掌 → 单元鼓励语
+    EnqueueAndPlay({kPromptSummary, kApplause, kPromptUnitPraise},
+                   AfterPlayback::kUnitSummaryFinished);
+}
+
+void EnglishLearning::StartPractice() {
+    attempt_ = 0;
+    practice_timeout_count_ = 0;
+    SetState(State::kPractice);
+    // 跟读态：音节行高亮，让孩子照着屏幕上的拆分读整个词
+    ShowCard(true);
+    EnqueueAndPlay({kPromptPractice}, AfterPlayback::kPracticePromptFinished);
+}
+
+void EnglishLearning::ArmTimeout(int ms) {
+    if (!hooks_.set_timeout) {
+        return;
+    }
+    hooks_.set_timeout(ms, [this]() {
+        // 设备端把回调转到主线程才触发，所以这里可以放心动状态。
+        if (state_ == State::kPractice || state_ == State::kPracticeRetry) {
+            OnPracticeTimeout();
+        } else if (state_ == State::kConfirmNext) {
+            OnConfirmTimeout();
+        }
+    });
+}
+
+void EnglishLearning::CancelTimeout() {
+    if (hooks_.set_timeout) {
+        hooks_.set_timeout(0, nullptr);
+    }
+}
+
+void EnglishLearning::OnPracticeTimeout() {
+    if (state_ != State::kPractice && state_ != State::kPracticeRetry) {
+        return;
+    }
+    practice_timeout_count_++;
+    ESP_LOGI(TAG, "practice timeout #%d", practice_timeout_count_);
+    // 超时也记一次没读出来，但措辞一样温和
+    RegisterPracticeMiss("", "timeout");
+}
+
+void EnglishLearning::OnConfirmTimeout() {
+    if (state_ != State::kConfirmNext) {
+        return;
+    }
+    ESP_LOGI(TAG, "confirm timeout, moving on");
+    AdvanceToNextWord();
+}
+
+const char* EnglishLearning::NextPraiseAsset() {
+    const int count = static_cast<int>(sizeof(kPraiseAssets) / sizeof(kPraiseAssets[0]));
+    const char* name = kPraiseAssets[praise_index_ % count];
+    praise_index_ = (praise_index_ + 1) % count;
+    return name;
+}
+
+/* ---------------- 原有流程 ---------------- */
+
 void EnglishLearning::StartChoosingUnit() {
     SetState(State::kChoosingUnit);
     unit_ = 0;
     index_ = 0;
+    attempt_ = 0;
+    correct_count_ = 0;
     if (hooks_.suppress_server_speech) {
         hooks_.suppress_server_speech(true);
     }
@@ -242,6 +535,11 @@ void EnglishLearning::StartUnit(int unit) {
     SetState(State::kStudying);
     unit_ = unit;
     index_ = 0;
+    attempt_ = 0;
+    correct_count_ = 0;
+    praise_index_ = 0;
+    practice_timeout_count_ = 0;
+    summary_started_ = false;
     if (hooks_.suppress_server_speech) {
         hooks_.suppress_server_speech(true);
     }
@@ -255,7 +553,15 @@ void EnglishLearning::PlayCurrentWord() {
         ESP_LOGW(TAG, "no current word (unit=%d index=%d)", unit_, index_);
         return;
     }
-    EnqueueAndPlay(BuildWordSequence(word), AfterPlayback::kWordFinished);
+    std::vector<std::string> items;
+    if (IsLastWord()) {
+        // 最后一个词：先说一句「这是最后一个词啦，加油！」
+        items.push_back(kPromptLastWord);
+    }
+    for (const std::string& name : BuildWordSequence(word)) {
+        items.push_back(name);
+    }
+    EnqueueAndPlay(std::move(items), AfterPlayback::kWordFinished);
 }
 
 std::vector<std::string> EnglishLearning::BuildWordSequence(const WordEntry& word) const {
@@ -272,44 +578,26 @@ std::vector<std::string> EnglishLearning::BuildWordSequence(const WordEntry& wor
 }
 
 void EnglishLearning::AdvanceStep() {
-    const int count = CurrentWordCount();
-    if (count <= 0) {
-        return;
-    }
-    if (index_ + 1 >= count) {
-        // 已经是最后一个了，再喊「下一个」就当作本单元结束
-        FinishUnit();
-        return;
-    }
-    index_++;
-    ShowCard();
-    PlayCurrentWord();
+    AdvanceToNextWord();
 }
 
 void EnglishLearning::AfterWord() {
-    const int count = CurrentWordCount();
-    if (count > 0 && index_ + 1 >= count) {
-        FinishUnit();
-        return;
-    }
-    ResumeListening();
+    // 词的三段播完了 -> 请孩子跟读
+    StartPractice();
 }
 
 void EnglishLearning::FinishUnit() {
-    ESP_LOGI(TAG, "unit %d finished", unit_);
-    SetState(State::kIdle);
-    if (hooks_.show_text) {
-        hooks_.show_text("本单元单词学习结束");
-    }
-    EnqueueAndPlay({kPromptUnitDone}, AfterPlayback::kUnitFinished);
+    AfterLastWordDone();
 }
 
 void EnglishLearning::Exit(bool to_idle) {
     ESP_LOGI(TAG, "exit learning mode (to_idle=%d)", to_idle ? 1 : 0);
+    CancelTimeout();
     pending_.clear();
     step_ = 0;
     awaiting_drain_ = false;
     after_ = AfterPlayback::kNone;
+    attempt_ = 0;
     SetState(State::kIdle);
     if (hooks_.suppress_server_speech) {
         hooks_.suppress_server_speech(false);
@@ -335,7 +623,7 @@ void EnglishLearning::ResumeListening() {
     }
 }
 
-void EnglishLearning::ShowCard() {
+void EnglishLearning::ShowCard(bool practice) {
     if (!hooks_.show_card) {
         return;
     }
@@ -350,6 +638,7 @@ void EnglishLearning::ShowCard() {
     card.syllable = word.syllable;
     card.zh = word.zh;
     card.is_last = (count > 0 && index_ + 1 >= count);
+    card.practice = practice;
     hooks_.show_card(card);
 }
 
@@ -405,8 +694,36 @@ void EnglishLearning::HandleAfterPlayback() {
         case AfterPlayback::kWordFinished:
             AfterWord();
             break;
+        case AfterPlayback::kPracticePromptFinished:
+        case AfterPlayback::kTryAgainFinished:
+        case AfterPlayback::kCorrectFinished:
+            // 「请跟我读一遍」/「再试一次」/「听正确的读法」播完了：等孩子开口
+            ResumeListening();
+            ArmTimeout(kPracticeTimeoutMs);
+            break;
+        case AfterPlayback::kPraiseFinished:
+        case AfterPlayback::kConfirmNextFinished:
+            // 等孩子回答「要不要继续下一个」
+            ResumeListening();
+            ArmTimeout(kConfirmTimeoutMs);
+            break;
+        case AfterPlayback::kLastPraiseFinished:
+            AfterLastWordDone();
+            break;
+        case AfterPlayback::kGiveUpFinished:
+            GiveUpCurrentWord();
+            break;
+        case AfterPlayback::kUnitSummaryFinished:
+            // 总结完了：回到待机状态，等用户说唤醒词再开始下一轮
+            SetState(State::kIdle);
+            if (hooks_.suppress_server_speech) {
+                hooks_.suppress_server_speech(false);
+            }
+            if (hooks_.set_idle) {
+                hooks_.set_idle("本单元单词学习结束");
+            }
+            break;
         case AfterPlayback::kUnitFinished:
-            // 本单元学完：回到待机状态，等用户说唤醒词再开始下一轮
             if (hooks_.suppress_server_speech) {
                 hooks_.suppress_server_speech(false);
             }
