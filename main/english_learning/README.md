@@ -10,7 +10,7 @@ ASR 识别出的文字推过来。
 用户：「开始学习英语单词」
 设备：「好的，开始学习英语单词。请问学习第几单元？」
 用户：「第三单元」
-设备：屏幕显示第 3 单元第 1 个词卡 → 读单词 → 读拼写 → 读音节拼读 → 读汉语意思
+设备：屏幕显示第 3 单元第 1 个词卡 → 读单词 → 读拼写 → 读整词慢速（屏幕同时显示音节拆分供跟读） → 读汉语意思
 用户：「下一个」
 设备：下一个词（同样几段）
 用户：「上一个」/「第三个」/「第一个」/「最后一个」
@@ -80,13 +80,13 @@ af-ter-noon              <- 26px 自带拉丁字体（音节；单音节词这�
 |---|---|---|
 | `en_u{u}_w{n}.ogg` | 单词读音 | 110 |
 | `en_u{u}_w{n}_spell.ogg` | 逐字母拼读 | 110 |
-| `en_u{u}_w{n}_syll.ogg` | 音节拼读（只有多音节词有） | 46 |
+| `en_u{u}_w{n}_syll.ogg` | 整词慢速跟读（只有多音节词有） | 46 |
 | `zh_u{u}_w{n}.ogg` | 汉语意思 | 110 |
 | `prompt_*.ogg` | 7 条提示语 | 7 |
 
 - 格式：Ogg-Opus，mono，24000Hz 输入，8kbps 码率，20ms 一帧
   （满足 `main/audio/demuxer/ogg_demuxer.cc` 的全部约束）
-- 总体积 **656.8 KB**（音节拼读 46 段约 84 KB）
+- 总体积 **656.6 KB**（慢速跟读 46 段约 82 KB）
 
 ### 3.1 播报编排
 
@@ -154,14 +154,14 @@ extern const char en_u3_w05_ogg_c2_start[] __asm__("_binary_main_assets_english_
 开机时会打一行自检日志，能看出用的是哪个候选、有多少音频可用：
 
 ```
-I (1234) EnglishAudio: 383/383 audio assets resolved via candidate 0, 656.8 KB total
+I (1234) EnglishAudio: 383/383 audio assets resolved via candidate 0, 656.6 KB total
 ```
 
 ## 5. 容量
 
 | 项 | 大小 |
 |---|---|
-| 音频（383 段） | 656.8 KB |
+| 音频（383 段） | 656.6 KB |
 | 词表头文件 `word_table.h` | 12 KB |
 | 音频索引表（flash 常量） | ~15 KB |
 | 卡片自带字体（4 个子集） | ~203 KB |
@@ -259,7 +259,7 @@ app 镜像 **3,678,336 B**，分区上限 4,128,768 B，**余量 450,432 B**。
 I (220) Board: UUID=... SKU=lichuang-dev-english
 I (1220) MCP: Add tool: self.english_learning.list_units [user]
 I (1240) EnglishLearning: hooks installed (ready=1)
-I (1270) EnglishAudio: 383/383 audio assets resolved via candidate 0, 656.8 KB total
+I (1270) EnglishAudio: 383/383 audio assets resolved via candidate 0, 656.6 KB total
 ```
 
 `candidate 0` 命中，说明这台 IDF 的 `EMBED_FILES` 符号名就是「只取文件名」；
@@ -532,25 +532,31 @@ I (3290) LcdDisplay: study selftest: cjk48 '下午' 96x47
 
 `ParsedIntent` 加了 `word_index`：1-based 的词序号，`-1` 表示「最后一个」，`0` 表示未指定。
 
-#### 音节拼读
+#### 跟读段（音节拆分 + 整词慢速）
 
 播报顺序从三段变成四段：
 
 ```
-单词  →  字母拼读  →  音节拼读  →  汉语意思
+单词  →  字母拼读  →  整词慢速（屏幕同时显示音节拆分）  →  汉语意思
 ```
 
-- **只有多音节词有音节段**（110 词里 46 个）。单音节词的 `syllable` 是空串，
-  跳过这一段 —— 单词读音本身就是它的音节拼读，再读一遍是噪音。
+- **只有多音节词有这一段**（110 词里 46 个）。单音节词的 `syllable` 是空串，跳过。
 - 音节数据来自用户提供的教材音节划分表，存在 `pep4a_words.json` 的 `syllable` 字段
-  （单音节词不标这个字段）。
+  （单音节词不标这个字段）。**屏幕上的拆分只用于视觉参考，不参与合成。**
 - 屏幕单词卡多一行显示音节（`af-ter-noon`），与字母拼读行共用 26px 拉丁字体。
 - **`PE` 不标音节**：教材表里 `PE → P-E` 后面括注「字母组合」，意思是它不是音节拆分。
-  照标的话 PE 会先读字母拼读 P-E、再读一遍音节 P-E，等于重复一次，所以留空。
+  照标的话 PE 会先读字母拼读 P-E、再读一遍，等于重复一次，所以留空。
 
-**音节音频怎么合成的**：把音节串的连字符换成逗号再喂给 Edge TTS，
-`af-ter-noon` → `af, ter, noon`。逗号让 TTS 在音节之间留出听得出来的停顿；
-直接喂 `af-ter-noon` 的话连字符会被当成符号吞掉，听感上分不出音节。
+**这一段的音频是整个单词的慢速发音，不是音节串。**
+原因：孤立的音节串（`af, ter, noon`）送 TTS 读不准 ——
+Edge 的免费 TTS 服务拒绝任何内嵌 SSML 标签（`phoneme` / `break` / `sub` / `say-as`
+六种写法实测全部 `NoAudioReceived`），所以没法用 IPA 指定音节发音；
+换 MiniMax TTS 之后音节串依然不自然（`qui`、`fa-vour-ite` 这类尤其明显）。
+两个独立引擎都不行，说明「孤立音节送 TTS」这条路整体走不通。
+
+所以这一段改成**整词慢速**（MiniMax `English_Graceful_Lady`，speed 0.70），
+发音 100% 正确；孩子看着屏幕上的 `af-ter-noon` 拆分跟读。**固件零改动** ——
+播报段数和顺序都没变，只是这一段的内容从「音节串」换成了「整词慢速」。
 
 **字符集**：音节行和字母拼读行共用 26px 字体，所以 `tools/gen_study_fonts.py`
 会把音节用到的字符并进拉丁字符集（38 → 42 个字形，含音节里的 C / S / P 等大写字母）。
@@ -576,7 +582,7 @@ I (3300) LcdDisplay: study selftest: cjk48 '下午' 96x47
 | `Compressed fonts is used ...` 告警 | **0 条** |
 | 四个自带字体的字宽 | 188 / 187 / 139 / 96 px，全部非零 |
 | E 级错误日志 | 0 条 |
-| 音频表 | `EnglishAudio: 383/383 audio assets resolved via candidate 0, 656.8 KB total` |
+| 音频表 | `EnglishAudio: 383/383 audio assets resolved via candidate 0, 656.6 KB total` |
 | SKU | `lichuang-dev-english` |
 | MCP 工具 | `self.english_learning.list_units [user]` 已注册 |
 | 唤醒词模型 | `wn9_nihaoxiaozhi_tts`（未变） |
@@ -584,3 +590,65 @@ I (3300) LcdDisplay: study selftest: cjk48 '下午' 96x47
 
 音节行的 139px 在 320px 屏上绰绰有余（可用 304px）；最长的音节串
 `de-liv-er-y work-er` 实测 222px，也放得下。
+
+
+### 10.10 音节发音方案怎么定下来的（2026-11-27）
+
+**问题**：第一版音节段用「音节串」喂 Edge TTS（`af, ter, noon`），
+用户实测判定发音不对。
+
+**排查路线**：
+
+| 尝试 | 结果 |
+|---|---|
+| Edge SSML `<phoneme alphabet="ipa">` | `NoAudioReceived`（不支持） |
+| Edge SSML `<break time="200ms"/>` | `NoAudioReceived`（不支持） |
+| Edge SSML `<sub alias="...">` | `NoAudioReceived`（不支持） |
+| Edge SSML `<say-as interpret-as="characters">` | `NoAudioReceived`（不支持） |
+| Edge 换参数（逗号/空格 × 快慢 × 美音/英音） | 6 套对比，用户判定不行 |
+| MiniMax TTS 音节串（女声/男声） | 依然不自然（`qui`、`fa-vour-ite` 最明显） |
+| espeak-ng 音素精确朗读 | 能做，但音色是机器人，不适合给孩子 |
+| **整词慢速 + 屏幕音节拆分** | **采用** |
+
+**结论**：Edge 的免费 TTS 服务不接受任何内嵌 SSML 标签，所以拿不到 IPA 级控制；
+两个独立引擎读孤立音节都不准，说明「孤立音节送 TTS」这条路整体走不通。
+
+**最终方案**：音节段音频 = 整词慢速（MiniMax `English_Graceful_Lady`，speed 0.70），
+屏幕继续显示 `af-ter-noon` 的连字符拆分做视觉参考。
+
+**固件零改动** —— 播报段数和顺序都没变，只是这一段的内容换了。
+
+**复现命令**（MiniMax 批量 TTS）：
+
+```powershell
+mcode-tools connector call connector__matrix__batch_text_to_audio --args-file _w_args_0.json
+mcode-tools get_asset_url <node_id>
+ffmpeg -i x.mp3 -ac 1 -ar 24000 -c:a libopus -b:a 8k -vbr on -application voip -frame_duration 20 x.ogg
+```
+
+CLI 路径见 `C:/Users/win11/.minimax/bin/mcode-tools.cmd`。
+
+试听包在项目目录 `english-learning/syll-preview/`，
+旧版音节音频备份在 `english-learning/syll-preview/_old_syll_backup/`。
+
+
+**上板实测**（run #45938574519，sha `ef45671`，app 镜像 3,709,008 B，余量 419,760 B）：
+
+```
+I (1130) EnglishAudio: 383/383 audio assets resolved via candidate 0, 656.6 KB total
+I (3290) LcdDisplay: study selftest: latin40 'afternoon' 188x41
+I (3290) LcdDisplay: study selftest: latin26 187x25
+I (3290) LcdDisplay: study selftest: latin26-syll 'af-ter-noon' 139x25
+I (3300) LcdDisplay: study selftest: cjk48 '下午' 96x47
+```
+
+| 检查项 | 结果 |
+|---|---|
+| 压缩字体告警 | 0 条 |
+| 四个字体字宽 | 188 / 187 / 139 / 96 px，全部非零 |
+| 音频表 | **383/383**，656.6 KB |
+| E 级错误 | 0 条 |
+| 唤醒词模型 | `wn9_nihaoxiaozhi_tts`（未变） |
+
+46 段新慢速音频逐个解析 Ogg Opus 校验：全部可解析，时长 1.15–2.19 s，平均 1.52 s，
+总体积 82.4 KB。
