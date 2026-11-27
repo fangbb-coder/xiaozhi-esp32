@@ -384,7 +384,7 @@ void ArrivalMonitor::WorkerTask() {
             }
             ESP_LOGI(TAG, "未绑定，候选设备 %d 个；最强：%s（广播 %u 次，最强 %d dBm）",
                      candidate_count_, FormatMac(candidates_[best].mac).c_str(),
-                     candidates_[best].count, candidates_[best].best_rssi);
+                     (unsigned)candidates_[best].count, candidates_[best].best_rssi);
             last_candidate_log_ms = now_ms;
         }
         xSemaphoreGive(mutex_);

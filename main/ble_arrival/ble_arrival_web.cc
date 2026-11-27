@@ -234,8 +234,9 @@ esp_err_t StatusApiHandler(httpd_req_t* req) {
              "\"dropped\":%u,\"enter\":%d,\"hysteresis\":%d,\"ip\":\"%s\"}",
              status.bound ? "true" : "false", status.scanning ? "true" : "false",
              JsonEscape(status.target_desc).c_str(), status.target_kind.c_str(), (int)status.state,
-             (int)status.filtered_rssi, (int)status.last_raw_rssi, status.arrived_count,
-             status.left_count, status.samples, status.matched_total, status.dropped,
+             (int)status.filtered_rssi, (int)status.last_raw_rssi, (unsigned)status.arrived_count,
+             (unsigned)status.left_count, (unsigned)status.samples, (unsigned)status.matched_total,
+             (unsigned)status.dropped,
              status.cfg.enter_threshold, status.cfg.hysteresis_db, DeviceIp().c_str());
 
     httpd_resp_set_type(req, "application/json; charset=utf-8");
@@ -244,7 +245,8 @@ esp_err_t StatusApiHandler(httpd_req_t* req) {
 }
 
 std::string ReadBody(httpd_req_t* req) {
-    size_t len = httpd_req_get_content_len(req);
+    // ESP-IDF 6.1 去掉了 httpd_req_get_content_len()，直接读结构体字段。
+    size_t len = req->content_len;
     if (len == 0 || len > 512) {
         return std::string();
     }
