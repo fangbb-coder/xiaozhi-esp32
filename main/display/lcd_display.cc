@@ -13,6 +13,7 @@
 #include <noto_emoji.h>
 #include <src/misc/cache/lv_cache.h>
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <vector>
 
@@ -22,6 +23,16 @@
 
 LV_FONT_DECLARE(BUILTIN_TEXT_FONT);
 LV_FONT_DECLARE(BUILTIN_ICON_FONT);
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+// 开机字体自检要用 lv_timer_create()，lv_timer.h 不在 lvgl.h 里，得单独引。
+#include <src/misc/lv_timer.h>
+// 学习卡片专用字体（由 tools/gen_study_fonts.py 生成，字符集按词表裁剪）
+// 标题 30px / 单词 40px / 拼读 26px / 汉语 48px，字号由脚本实测字宽后确定。
+LV_FONT_DECLARE(font_study_latin_30);
+LV_FONT_DECLARE(font_study_latin_40);
+LV_FONT_DECLARE(font_study_latin_26);
+LV_FONT_DECLARE(font_study_cjk_48);
+#endif
 LV_FONT_DECLARE(font_material_symbols_30_4);
 LV_FONT_DECLARE(font_noto_emoji_30_4);
 
@@ -555,6 +566,11 @@ void LcdDisplay::SetupUI() {
     lv_obj_set_style_text_font(emoji_label_, large_icon_font, 0);
     lv_obj_set_style_text_color(emoji_label_, lvgl_theme->text_color(), 0);
     lv_label_set_text(emoji_label_, MATERIAL_SYMBOLS_ROBOT_2);
+
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    // 开机字体自检：渲染一帧样例单词卡。
+    StartStudyFontSelfTest();
+#endif
 }
 #if CONFIG_IDF_TARGET_ESP32P4
 #define MAX_MESSAGES 40
@@ -1096,6 +1112,11 @@ void LcdDisplay::SetupUI() {
     lv_obj_set_style_text_color(low_battery_label_, lv_color_white(), 0);
     lv_obj_center(low_battery_label_);
     lv_obj_add_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN);
+
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    // 开机字体自检：渲染一帧样例单词卡。
+    StartStudyFontSelfTest();
+#endif
 }
 
 void LcdDisplay::SetPreviewImage(std::unique_ptr<LvglImage> image) {
@@ -1193,6 +1214,305 @@ void LcdDisplay::ClearChatMessages() {
     }
 }
 #endif
+
+void LcdDisplay::CreateStudyCard() {
+    if (study_card_ != nullptr) {
+        return;
+    }
+    if (current_theme_ == nullptr) {
+        return;
+    }
+    auto lvgl_theme = static_cast<LvglTheme*>(current_theme_);
+    if (lvgl_theme->text_font() == nullptr) {
+        return;
+    }
+#if !CONFIG_ENGLISH_LEARNING_ENABLED
+    // 学习卡片有自己的字体，这里只是给其它构建路径留的退路。
+    auto text_font = lvgl_theme->text_font()->font();
+#endif
+
+    auto screen = lv_screen_active();
+
+    /*
+     * Full screen card for the English learning extension.
+     *
+     * 配色写死成白底黑字，不跟随主题：深色主题下背景会变成黑色，整屏看着像黑屏。
+     *
+     * 四行用绝对定位，不用 flex + LV_SIZE_CONTENT：flex 容器的自动高度要等子对象
+     * 布局完才算得准，算不准时整块内容会被裁掉，表现就是「屏上一个字都没有」。
+     * 四行的行高是已知的（30/40/26/48px 字体对应 31/41/25/47px），直接算好 y 偏移即可。
+     */
+    study_card_ = lv_obj_create(screen);
+    lv_obj_set_size(study_card_, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_style_radius(study_card_, 0, 0);
+    lv_obj_set_style_border_width(study_card_, 0, 0);
+    lv_obj_set_style_pad_all(study_card_, 0, 0);
+    lv_obj_set_style_shadow_width(study_card_, 0, 0);
+    lv_obj_set_style_bg_color(study_card_, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_bg_opa(study_card_, LV_OPA_COVER, 0);
+    lv_obj_set_scrollbar_mode(study_card_, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_remove_flag(study_card_, LV_OBJ_FLAG_SCROLLABLE);
+
+    study_content_ = lv_obj_create(study_card_);
+    lv_obj_set_size(study_content_, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_style_radius(study_content_, 0, 0);
+    lv_obj_set_style_border_width(study_content_, 0, 0);
+    lv_obj_set_style_pad_all(study_content_, 0, 0);
+    lv_obj_set_style_shadow_width(study_content_, 0, 0);
+    lv_obj_set_style_bg_opa(study_content_, LV_OPA_TRANSP, 0);
+    lv_obj_set_scrollbar_mode(study_content_, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_remove_flag(study_content_, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* All four lines share the same width so the text stays centred. */
+    const int line_width = LV_HOR_RES - lvgl_theme->spacing(8);
+
+    /* Line 1: unit and progress */
+    study_unit_label_ = lv_label_create(study_content_);
+    lv_obj_set_width(study_unit_label_, line_width);
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    lv_obj_set_style_text_font(study_unit_label_, &font_study_latin_30, 0);
+#else
+    lv_obj_set_style_text_font(study_unit_label_, text_font, 0);
+#endif
+    lv_obj_set_style_text_color(study_unit_label_, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_text_opa(study_unit_label_, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_align(study_unit_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(study_unit_label_, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_align(study_unit_label_, LV_ALIGN_TOP_MID, 0, 12);
+    lv_label_set_text(study_unit_label_, "");
+
+    /* Line 2: the English word, the big one */
+    study_word_label_ = lv_label_create(study_content_);
+    lv_obj_set_width(study_word_label_, line_width);
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    lv_obj_set_style_text_font(study_word_label_, &font_study_latin_40, 0);
+#else
+    lv_obj_set_style_text_font(study_word_label_, text_font, 0);
+#endif
+    lv_obj_set_style_text_color(study_word_label_, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_text_opa(study_word_label_, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_align(study_word_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(study_word_label_, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_align(study_word_label_, LV_ALIGN_TOP_MID, 0, 53);
+    lv_label_set_text(study_word_label_, "");
+
+    /* Line 3: letter by letter spelling */
+    study_spell_label_ = lv_label_create(study_content_);
+    lv_obj_set_width(study_spell_label_, line_width);
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    lv_obj_set_style_text_font(study_spell_label_, &font_study_latin_26, 0);
+#else
+    lv_obj_set_style_text_font(study_spell_label_, text_font, 0);
+#endif
+    lv_obj_set_style_text_color(study_spell_label_, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_text_opa(study_spell_label_, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_align(study_spell_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(study_spell_label_, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_align(study_spell_label_, LV_ALIGN_TOP_MID, 0, 104);
+    lv_label_set_text(study_spell_label_, "");
+
+    /* Line 4: syllable split, e.g. "af-ter-noon". Only multi-syllable words have one. */
+    study_syllable_label_ = lv_label_create(study_content_);
+    lv_obj_set_width(study_syllable_label_, line_width);
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    lv_obj_set_style_text_font(study_syllable_label_, &font_study_latin_26, 0);
+#else
+    lv_obj_set_style_text_font(study_syllable_label_, text_font, 0);
+#endif
+    lv_obj_set_style_text_color(study_syllable_label_, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_text_opa(study_syllable_label_, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_align(study_syllable_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(study_syllable_label_, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_align(study_syllable_label_, LV_ALIGN_TOP_MID, 0, 139);
+    lv_label_set_text(study_syllable_label_, "");
+
+    /* Line 4: Chinese meaning */
+    study_zh_label_ = lv_label_create(study_content_);
+    lv_obj_set_width(study_zh_label_, line_width);
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    lv_obj_set_style_text_font(study_zh_label_, &font_study_cjk_48, 0);
+#else
+    lv_obj_set_style_text_font(study_zh_label_, text_font, 0);
+#endif
+    lv_obj_set_style_text_color(study_zh_label_, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_text_opa(study_zh_label_, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_align(study_zh_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(study_zh_label_, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_align(study_zh_label_, LV_ALIGN_TOP_MID, 0, 174);
+    lv_label_set_text(study_zh_label_, "");
+
+    lv_obj_add_flag(study_card_, LV_OBJ_FLAG_HIDDEN);
+
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    /* 自检：三个自带字体能不能真的量出字宽。量不出来就说明字形数据有问题。 */
+    {
+        lv_point_t size;
+        lv_text_get_size(&size, "Afternoon", &font_study_latin_40, 0, 0, 10000,
+                         LV_TEXT_FLAG_NONE);
+        ESP_LOGI(TAG, "study font latin40: Afternoon %dx%d", (int)size.x, (int)size.y);
+        lv_text_get_size(&size, "a-f-t-e-r-n-o-o-n", &font_study_latin_26, 0, 0, 10000,
+                         LV_TEXT_FLAG_NONE);
+        ESP_LOGI(TAG, "study font latin26: spell %dx%d", (int)size.x, (int)size.y);
+        lv_text_get_size(&size, "下午", &font_study_cjk_48, 0, 0, 10000, LV_TEXT_FLAG_NONE);
+        ESP_LOGI(TAG, "study font cjk48: 下午 %dx%d", (int)size.x, (int)size.y);
+    }
+#endif
+}
+
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+namespace {
+
+// 开机自检用的样例内容，取自词表里的真实条目（unit 1 的第一个词）。
+constexpr const char* kSelfTestUnit = "Unit 1    1 / 21";
+constexpr const char* kSelfTestWord = "afternoon";
+constexpr const char* kSelfTestSpell = "a-f-t-e-r-n-o-o-n";
+constexpr const char* kSelfTestSyllable = "af-ter-noon";
+constexpr const char* kSelfTestZh = "下午";
+
+// lv_timer_t 在 LVGL 公开头里只是前置声明（完整定义在 private 头），
+// 读不到 timer->user_data；而捕获 this 的 lambda 又不能转成函数指针
+// （标准只允许 captureless lambda 做这种转换）。
+// 所以用文件级静态指针把 display 传给回调。
+LcdDisplay* g_selftest_display = nullptr;
+
+}  // namespace
+
+void LcdDisplay::StartStudyFontSelfTest() {
+    // 幂等：卡片已经在就复用。
+    CreateStudyCard();
+    if (study_card_ == nullptr) {
+        ESP_LOGW(TAG, "study selftest: card was not created");
+        return;
+    }
+
+    g_selftest_display = this;
+
+    // 等开机画面（AI logo）稳定后再闪。
+    //
+    // lv_timer_create 默认 repeat_count = -1（无限重复）。这里要的是「只跑一次」：
+    // lv_timer_set_repeat_count(timer, 1) 之后，回调执行完 repeat_count 归零，
+    // LVGL 会自动回收这个 timer（auto_delete 默认 true），不用自己 delete，
+    // 也就没有「回调里删自己」的悬垂风险。
+    lv_timer_t* show_timer = lv_timer_create(
+        [](lv_timer_t*) {
+            auto* display = g_selftest_display;
+            if (display != nullptr) {
+                display->ShowStudySelfTestCard();
+            }
+        },
+        2500, nullptr);
+    if (show_timer != nullptr) {
+        lv_timer_set_repeat_count(show_timer, 1);
+    }
+}
+
+void LcdDisplay::ShowStudySelfTestCard() {
+    if (study_card_ == nullptr || study_word_label_ == nullptr ||
+        study_syllable_label_ == nullptr) {
+        return;
+    }
+
+    lv_label_set_text(study_unit_label_, kSelfTestUnit);
+    lv_label_set_text(study_word_label_, kSelfTestWord);
+    lv_label_set_text(study_spell_label_, kSelfTestSpell);
+    lv_label_set_text(study_syllable_label_, kSelfTestSyllable);
+    lv_label_set_text(study_zh_label_, kSelfTestZh);
+
+    // 量字宽：字形描述符坏了这里就是 0。
+    lv_point_t size;
+    lv_text_get_size(&size, kSelfTestWord, &font_study_latin_40, 0, 0, 10000,
+                     LV_TEXT_FLAG_NONE);
+    ESP_LOGI(TAG, "study selftest: latin40 '%s' %dx%d", kSelfTestWord, (int)size.x,
+             (int)size.y);
+    lv_text_get_size(&size, kSelfTestSpell, &font_study_latin_26, 0, 0, 10000,
+                     LV_TEXT_FLAG_NONE);
+    ESP_LOGI(TAG, "study selftest: latin26 %dx%d", (int)size.x, (int)size.y);
+    lv_text_get_size(&size, kSelfTestSyllable, &font_study_latin_26, 0, 0, 10000,
+                     LV_TEXT_FLAG_NONE);
+    ESP_LOGI(TAG, "study selftest: latin26-syll '%s' %dx%d", kSelfTestSyllable,
+             (int)size.x, (int)size.y);
+    lv_text_get_size(&size, kSelfTestZh, &font_study_cjk_48, 0, 0, 10000,
+                     LV_TEXT_FLAG_NONE);
+    ESP_LOGI(TAG, "study selftest: cjk48 '%s' %dx%d", kSelfTestZh, (int)size.x,
+             (int)size.y);
+
+    // 亮出来。LVGL 下一轮刷新会真的去取位图：
+    // 压缩位图 + CONFIG_LV_USE_FONT_COMPRESSED=n 会打出
+    // "Compressed fonts is used but LV_USE_FONT_COMPRESSED is not enabled" 的 warn。
+    lv_obj_remove_flag(study_card_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(study_card_);
+
+    // 闪一下就收回去，别一直占着屏幕。同样是一次性 timer。
+    lv_timer_t* hide_timer = lv_timer_create(
+        [](lv_timer_t*) {
+            auto* display = g_selftest_display;
+            g_selftest_display = nullptr;
+            if (display != nullptr) {
+                display->HideStudySelfTestCard();
+            }
+        },
+        1500, nullptr);
+    if (hide_timer != nullptr) {
+        lv_timer_set_repeat_count(hide_timer, 1);
+    }
+}
+
+void LcdDisplay::HideStudySelfTestCard() {
+    if (study_card_ == nullptr) {
+        return;
+    }
+    lv_obj_add_flag(study_card_, LV_OBJ_FLAG_HIDDEN);
+}
+#endif  // CONFIG_ENGLISH_LEARNING_ENABLED
+
+void LcdDisplay::ShowStudyCard(int unit, int index, int word_count, const char* word,
+                               const char* spell, const char* syllable, const char* zh) {
+    if (!SupportsGuiOperations() || !setup_ui_called_) {
+        ESP_LOGW(TAG, "ShowStudyCard() called before SetupUI()");
+        return;
+    }
+    DisplayLockGuard lock(this);
+    CreateStudyCard();
+    if (study_card_ == nullptr) {
+        return;
+    }
+
+    char header[48];
+    snprintf(header, sizeof(header), "Unit %d    %d / %d", unit, index + 1, word_count);
+    lv_label_set_text(study_unit_label_, header);
+    lv_label_set_text(study_word_label_, word != nullptr ? word : "");
+    lv_label_set_text(study_spell_label_, spell != nullptr ? spell : "");
+    lv_label_set_text(study_syllable_label_, syllable != nullptr ? syllable : "");
+    lv_label_set_text(study_zh_label_, zh != nullptr ? zh : "");
+
+    lv_obj_remove_flag(study_card_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(study_card_);
+
+    /* 自检：把实际文本量出来，确认字体与位置都对得上。 */
+    ESP_LOGI(TAG, "study card: '%s' / '%s' / '%s'", word != nullptr ? word : "",
+             spell != nullptr ? spell : "", zh != nullptr ? zh : "");
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    {
+        lv_point_t size;
+        lv_text_get_size(&size, word != nullptr ? word : "", &font_study_latin_40, 0, 0,
+                         10000, LV_TEXT_FLAG_NONE);
+        ESP_LOGI(TAG, "study text: word %dx%d at y=%d", (int)size.x, (int)size.y,
+                 (int)lv_obj_get_y(study_word_label_));
+        lv_text_get_size(&size, zh != nullptr ? zh : "", &font_study_cjk_48, 0, 0, 10000,
+                         LV_TEXT_FLAG_NONE);
+        ESP_LOGI(TAG, "study text: zh %dx%d at y=%d", (int)size.x, (int)size.y,
+                 (int)lv_obj_get_y(study_zh_label_));
+    }
+#endif
+}
+
+void LcdDisplay::HideStudyCard() {
+    if (study_card_ == nullptr) {
+        return;
+    }
+    DisplayLockGuard lock(this);
+    lv_obj_add_flag(study_card_, LV_OBJ_FLAG_HIDDEN);
+}
 
 bool LcdDisplay::SetEmotion(const char* emotion) {
     if (!setup_ui_called_) {

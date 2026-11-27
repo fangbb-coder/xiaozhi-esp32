@@ -1,0 +1,151 @@
+name: English Learning
+
+# 英语单词学习的流水线：
+#   1. host-test  —— 在普通 Linux runner 上编译并运行意图解析器 + 教学状态机的单元测试，
+#                     并校验两个自动生成的头文件与词表/音频目录一致。
+#   2. idf-build —— 用官方 ESP-IDF 容器编译 lckfb/szpi-esp32s3 的 lichuang-dev-english 变体，
+#                     产出可直接烧录的 merged-binary.bin。
+#
+# 本机没有 ESP-IDF 工具链（WSL2 已损坏、没有 docker），所以固件编译走云端。
+
+on:
+  workflow_dispatch:
+  push:
+    # 任意分支都触发，靠下面的 paths 过滤决定跑不跑。
+    # 分支名刻意不用 main / ci/*：上游 build.yml 在这两个模式上会全量编译所有板子，
+    # 拖慢我们自己的构建。
+    branches:
+      - "**"
+    paths:
+      - "main/english_learning/**"
+      - "main/assets/english/**"
+      - "test/english_learning/**"
+      - "scripts/gen_english_*.py"
+      - "main/CMakeLists.txt"
+      - "main/Kconfig.projbuild"
+      - "main/application.cc"
+      - "main/display/display.h"
+      - "main/display/lcd_display.cc"
+      - "main/mcp_server.cc"
+      - "main/boards/lckfb/szpi-esp32s3/config.json"
+      - ".github/workflows/english-learning.yml"
+  pull_request:
+    paths:
+      - "main/english_learning/**"
+      - "main/assets/english/**"
+      - "test/english_learning/**"
+      - "scripts/gen_english_*.py"
+      - "main/CMakeLists.txt"
+      - "main/Kconfig.projbuild"
+      - "main/application.cc"
+      - "main/display/display.h"
+      - "main/display/lcd_display.cc"
+      - "main/mcp_server.cc"
+      - "main/boards/lckfb/szpi-esp32s3/config.json"
+      - ".github/workflows/english-learning.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  host-test:
+    name: Host unit test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Generate embedded tables
+        run: |
+          set -euo pipefail
+          # word_table.h / english_audio_table.h 由构建系统自动生成（已 .gitignore），
+          # 全新 checkout 里没有，主机侧测试必须先手动生成一次。
+          python3 scripts/gen_english_word_table.py
+          python3 scripts/gen_english_audio_index.py
+
+      - name: Compile and run intent parser test
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -Wall -Wextra -Werror -O2 \
+            -I main/english_learning \
+            test/english_learning/intent_parser_test.cc \
+            main/english_learning/intent_parser.cc \
+            -o /tmp/intent_test
+          /tmp/intent_test
+
+      - name: Compile and run learning state machine test
+        run: |
+          set -euo pipefail
+          # esp_log.h 只有桩头：真正的日志宏在设备上才有，这里只要能编译。
+          mkdir -p /tmp/stubs
+          cat > /tmp/stubs/esp_log.h <<'STUB_EOF'
+          #pragma once
+          #define ESP_LOGE(tag, fmt, ...) ((void)0)
+          #define ESP_LOGW(tag, fmt, ...) ((void)0)
+          #define ESP_LOGI(tag, fmt, ...) ((void)0)
+          #define ESP_LOGD(tag, fmt, ...) ((void)0)
+          #define ESP_LOGV(tag, fmt, ...) ((void)0)
+          STUB_EOF
+          g++ -std=c++17 -Wall -Wextra -Werror -O2 \
+            -I main/english_learning -I /tmp/stubs \
+            test/english_learning/english_learning_test.cc \
+            test/english_learning/fake_audio.S \
+            main/english_learning/english_learning.cc \
+            main/english_learning/english_audio.cc \
+            main/english_learning/intent_parser.cc \
+            -o /tmp/english_learning_test
+          /tmp/english_learning_test
+
+      - name: Verify generated tables match the data
+        run: |
+          set -euo pipefail
+          # 两个头文件是构建时自动生成的（已在 .gitignore 里）。
+          # 这里重新生成一遍，检查内容和规模符合预期。
+          python3 scripts/gen_english_word_table.py \
+            --data main/english_learning/pep4a_words.json \
+            --out /tmp/word_table.h
+          grep -q 'kEnglishUnitCount = 6' /tmp/word_table.h
+          test "$(grep -cE 'static const WordEntry kU[0-9]+W[0-9]+ =' /tmp/word_table.h)" -eq 110
+
+          python3 scripts/gen_english_audio_index.py \
+            --assets main/assets/english \
+            --output /tmp/english_audio_table.h
+          # 音频数量按目录里的实际 ogg 个数算，加音频后不用再改这里的数字。
+          # 每个 ogg 在索引里出现 2 次 ogg_c0_start（extern 声明 + 表格项）。
+          audio_count=$(ls main/assets/english/*.ogg | wc -l)
+          test "$(grep -c 'ogg_c0_start' /tmp/english_audio_table.h)" -eq $((audio_count * 2))
+
+  idf-build:
+    name: Build lichuang-dev-english
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:release-v6.1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$IDF_PATH/export.sh"
+          python scripts/build.py lckfb/szpi-esp32s3 --name lichuang-dev-english
+
+      - name: Report image sizes
+        shell: bash
+        run: |
+          set -euo pipefail
+          # app 分区上限 0x3f0000 = 4128768 字节。英语学习大约要多占 0.7 MB，
+          # 这里把实际大小打出来，超了就能立刻看到。
+          APP=build/xiaozhi.bin
+          if [ -f "$APP" ]; then
+            SIZE=$(stat -c%s "$APP")
+            echo "app image: $SIZE bytes (limit 4128768, headroom $((4128768 - SIZE)))"
+          fi
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v7
+        with:
+          name: xiaozhi_lckfb_lichuang-dev-english_${{ github.sha }}
+          path: build/merged-binary.bin
+          if-no-files-found: error

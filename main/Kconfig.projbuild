@@ -1248,4 +1248,172 @@ menu "TAIJIPAI_S3_CONFIG"
         启动双声道
 endmenu
 
+menu "BLE Arrival Sensor (门口迎宾)"
+
+    config BLE_ARRIVAL_ENABLED
+        bool "Enable BLE arrival detection (门口迎宾)"
+        default n
+        help
+            打开 BLE 扫描 + RSSI 接近判定，检测到目标靠近时在屏幕上显示文字并播放提示音。
+            需要 BLE 5.0 支持的芯片（ESP32-S3 / C3 / C6 等）。
+            注意：开启后会额外占用蓝牙栈的 RAM，并引入 Wi-Fi/BLE 射频共存开销。
+
+    config BLE_ARRIVAL_TARGET_MAC
+        string "Default beacon target"
+        depends on BLE_ARRIVAL_ENABLED
+        default ""
+        help
+            编译期写死的信标目标，作为运行时绑定（Web 页面 / NVS）的兜底。
+            格式：
+              AA:BB:CC:DD:EE:FF                            按 MAC 匹配
+              E2C56DB5-DFFB-48D2-B060-D0F5A71096E0         按 iBeacon UUID 匹配
+              E2C56DB5-DFFB-48D2-B060-D0F5A71096E0:100:200 UUID + major + minor
+            留空表示不预设目标，设备启动后进入自动发现模式，
+            通过 http://<设备IP>:8080/ 观察候选设备并绑定。
+
+    config BLE_ARRIVAL_SCAN_INTERVAL_MS
+        int "BLE scan interval (ms)"
+        depends on BLE_ARRIVAL_ENABLED
+        range 10 2000
+        default 100
+        help
+            两次扫描窗口之间的间隔。越小响应越快，射频占用越高。
+            ESP32-S3 与 Wi-Fi 分时复用，占空比建议不超过 50%。
+
+    config BLE_ARRIVAL_SCAN_WINDOW_MS
+        int "BLE scan window (ms)"
+        depends on BLE_ARRIVAL_ENABLED
+        range 10 2000
+        default 50
+        help
+            每次扫描的持续时间，必须 <= scan interval。
+            50ms / 100ms = 50% 占空比，是本项目实测比较稳的折中值。
+
+    config BLE_ARRIVAL_SCAN_ACTIVE
+        bool "Active scanning (send SCAN_REQ)"
+        depends on BLE_ARRIVAL_ENABLED
+        default n
+        help
+            主动扫描会额外收到 SCAN_RSP，RSSI 更准一些，但射频活动更多。
+            信标广播本来就够密时用被动扫描即可。
+
+    config BLE_ARRIVAL_TICK_MS
+        int "Detection task tick (ms)"
+        depends on BLE_ARRIVAL_ENABLED
+        range 20 1000
+        default 100
+        help
+            检测任务的处理周期，同时也是"多久没收到包算超时"的精度。
+
+    config BLE_ARRIVAL_MEDIAN_WINDOW
+        int "Median filter window (samples)"
+        depends on BLE_ARRIVAL_ENABLED
+        range 1 15
+        default 5
+        help
+            中值滤波窗口，用来去掉单点毛刺。奇数效果更好。
+
+    config BLE_ARRIVAL_AVG_WINDOW
+        int "Moving average window (samples)"
+        depends on BLE_ARRIVAL_ENABLED
+        range 1 30
+        default 10
+        help
+            滑动平均窗口，用来平滑残余抖动。窗口越大越稳但响应越慢。
+
+    config BLE_ARRIVAL_ENTER_THRESHOLD
+        int "Enter threshold (dBm)"
+        depends on BLE_ARRIVAL_ENABLED
+        range -127 0
+        default -70
+        help
+            滤波后 RSSI 大于等于该值算"靠近"。
+            **必须在自己的设备上标定**：站在门口读一次，退到楼下读一次，取中间值。
+            不同芯片/天线/环境的绝对值完全不可移植。
+
+    config BLE_ARRIVAL_HYSTERESIS_DB
+        int "Hysteresis (dB)"
+        depends on BLE_ARRIVAL_ENABLED
+        range 0 127
+        default 12
+        help
+            迟滞带宽。退出阈值 = 进入阈值 - 该值，避免在边界反复横跳。
+
+    config BLE_ARRIVAL_HIT_COUNT
+        int "Consecutive hits to trigger arrival"
+        depends on BLE_ARRIVAL_ENABLED
+        range 1 30
+        default 3
+        help
+            连续多少次超过进入阈值才判定"到达"。
+
+    config BLE_ARRIVAL_MISS_COUNT
+        int "Consecutive misses to trigger departure"
+        depends on BLE_ARRIVAL_ENABLED
+        range 1 30
+        default 4
+        help
+            连续多少次低于退出阈值才判定"离开"。
+
+    config BLE_ARRIVAL_COOLDOWN_MS
+        int "Arrival cooldown (ms)"
+        depends on BLE_ARRIVAL_ENABLED
+        range 0 3600000
+        default 60000
+        help
+            两次"到达"播报之间的最小间隔，防止反复播报。
+
+    config BLE_ARRIVAL_STALE_TIMEOUT_MS
+        int "Beacon loss timeout (ms)"
+        depends on BLE_ARRIVAL_ENABLED
+        range 1000 120000
+        default 8000
+        help
+            超过这个时长没收到信标的广播就判定"离开"。
+            实测设备的广播间隔最大空档可达 4.7 秒，所以默认给到 8 秒。
+
+    config BLE_ARRIVAL_WEB_ENABLED
+        bool "Enable web management page"
+        depends on BLE_ARRIVAL_ENABLED
+        default y
+        help
+            自起一个 httpd（默认 8080 端口），可以在局域网上用手机浏览器：
+            查看实时 RSSI / 事件计数、绑定或解绑信标、在线调整阈值。
+            没有鉴权，不要映射到公网。
+
+    config BLE_ARRIVAL_WEB_PORT
+        int "Web management port"
+        depends on BLE_ARRIVAL_ENABLED && BLE_ARRIVAL_WEB_ENABLED
+        range 1 65535
+        default 8080
+
+    config BLE_ARRIVAL_ARRIVAL_TEXT
+        string "Arrival message"
+        depends on BLE_ARRIVAL_ENABLED
+        default "宝贝到门口啦，准备迎接"
+        help
+            检测到到达时显示在屏幕上的文字。
+
+    config BLE_ARRIVAL_DEPARTURE_TEXT
+        string "Departure message"
+        depends on BLE_ARRIVAL_ENABLED
+        default "宝贝已离开门口"
+        help
+            检测到离开时显示在屏幕上的文字。
+
+endmenu
+
+menu "English Learning (英语单词学习)"
+
+    config ENGLISH_LEARNING_ENABLED
+        bool "Enable English word learning (英语单词学习)"
+        default n
+        help
+            打开本地英语单词学习应用。说「开始学习英语单词」，设备会问学习第几单元，
+            然后逐词展示英文、逐字母拼写和汉语意思，并朗读出来。
+            词表和预生成的离线发音会编进固件（约 600 KB），开启前请确认 app 分区放得下。
+            关闭时不占用任何 flash 空间，设备行为与官方固件完全一致。
+
+endmenu
+
 endmenu

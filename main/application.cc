@@ -11,6 +11,14 @@
 #include "system_info.h"
 #include "text_glyph_payload.h"
 #include "websocket_protocol.h"
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+#include "english_learning/english_audio.h"
+#endif
+
+#if CONFIG_BLE_ARRIVAL_ENABLED
+#include "ble_arrival/ble_arrival_monitor.h"
+#include "ble_arrival/ble_arrival_web.h"
+#endif
 
 #include <driver/gpio.h>
 #include <esp_log.h>
@@ -125,6 +133,13 @@ void Application::Initialize() {
     // easy to see and hard to connect to a tool list.
     mcp_server.LogToolInventory();
 
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    // Initialize the local English learning extension. It hooks into the ASR text
+    // and plays pre-generated audio from flash, so it must not disturb the
+    // normal conversation path.
+    InitializeEnglishLearning();
+#endif
+
     // Set network event callback for UI updates and network state handling
     board.SetNetworkEventCallback([this](NetworkEvent event, const std::string& data) {
         auto display = Board::GetInstance().GetDisplay();
@@ -190,6 +205,30 @@ void Application::Initialize() {
 
     // Update the status bar immediately to show the network state
     display->UpdateStatusBar(true);
+
+#if CONFIG_BLE_ARRIVAL_ENABLED
+    // 门口迎宾：BLE 接近检测。
+    // 检测跑在独立任务里；播报统一用 Schedule() 转到主任务执行，
+    // 避免从蓝牙/后台任务直接碰显示和音频。
+    ble_arrival::ArrivalMonitor::GetInstance().Start(
+        [this](ble_arrival::AnnounceKind kind, const char* status, const char* message) {
+            this->Schedule([this, kind, status, message]() {
+                const std::string_view sound = (kind == ble_arrival::AnnounceKind::kArrived)
+                                                  ? Lang::Sounds::OGG_SUCCESS
+                                                  : Lang::Sounds::OGG_VIBRATION;
+                this->Alert(status, message, "", sound);
+            });
+        },
+        [this]() {
+            // 设备正在收音/说话/播报时暂停 BLE 扫描，把射频让给 Wi-Fi 音频通道
+            DeviceState state = this->GetDeviceState();
+            return state == kDeviceStateListening || state == kDeviceStateSpeaking ||
+                   state == kDeviceStateNotifying;
+        });
+#if CONFIG_BLE_ARRIVAL_WEB_ENABLED
+    ble_arrival::StartWebServer();
+#endif
+#endif
 }
 
 void Application::Run() {
@@ -236,6 +275,14 @@ void Application::Run() {
             if (audio_service_.IsPlaybackIdle()) {
                 notify_player_.OnPlaybackDrained();
             }
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+            // The local lesson chains its own audio segments on this callback.
+            // It runs before the deferred listening start so that a segment it
+            // pushes keeps the microphone closed until the queue drains again.
+            if (audio_service_.IsPlaybackIdle()) {
+                english_learning::EnglishLearning::GetInstance().OnPlaybackFinished();
+            }
+#endif
             // Deferred listening start (auto mode): the playback queue has
             // drained, so it is now safe to enable voice processing.
             if (pending_listening_start_ && GetDeviceState() == kDeviceStateListening &&
@@ -591,6 +638,14 @@ void Application::InitializeProtocol() {
     });
 
     protocol_->OnIncomingAudio([this](std::unique_ptr<AudioStreamPacket> packet) {
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+        // During a local lesson the device speaks on its own; the server reply
+        // for the same turn must not be mixed in.
+        if (local_learning_active_) {
+            ESP_LOGD(TAG, "dropping server audio while the local lesson is running");
+            return;
+        }
+#endif
         if (GetDeviceState() == kDeviceStateSpeaking) {
             audio_service_.PushPacketToDecodeQueue(std::move(packet));
         }
@@ -656,6 +711,13 @@ void Application::InitializeProtocol() {
                 StartNotification(std::move(url), std::move(subtitles));
             });
         } else if (strcmp(type->valuestring, "tts") == 0) {
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+            if (local_learning_active_) {
+                // 本地教学期间，服务端这一轮的回复一律不播，也不改设备状态
+                ESP_LOGD(TAG, "ignoring server tts during the local lesson");
+                return;
+            }
+#endif
             auto state = cJSON_GetObjectItem(root, "state");
             if (!cJSON_IsString(state)) {
                 return;
@@ -700,13 +762,24 @@ void Application::InitializeProtocol() {
                     glyphs.clear();
                 }
                 ESP_LOGI(TAG, ">> %s", text->valuestring);
-                Schedule([display, message = std::string(text->valuestring),
+                Schedule([this, display, message = std::string(text->valuestring),
                           glyphs = std::move(glyphs), bpp]() {
                     display->AddTextGlyphs(glyphs, bpp);
                     display->SetChatMessage("user", message.c_str());
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+                    // 本地扩展应用（英语单词学习）在这里判断这句话是不是教学指令。
+                    // 返回 true 表示设备接管这一轮，服务端不要再回答。
+                    HandleEnglishUserText(message);
+#endif
                 });
             }
         } else if (strcmp(type->valuestring, "llm") == 0) {
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+            if (local_learning_active_) {
+                ESP_LOGD(TAG, "ignoring server llm during the local lesson");
+                return;
+            }
+#endif
             auto emotion = cJSON_GetObjectItem(root, "emotion");
             if (cJSON_IsString(emotion)) {
                 Schedule([display, emotion_str = std::string(emotion->valuestring)]() {
@@ -1104,6 +1177,17 @@ void Application::HandleStateChangedEvent() {
             // Do nothing
             break;
     }
+
+    // A local lesson asset asked for the Speaking state. The state handler above
+    // has just reset the decoder, so the asset can be pushed now without being
+    // wiped out by that reset.
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    if (!pending_local_asset_.empty() && GetDeviceState() == kDeviceStateSpeaking) {
+        std::string asset = std::move(pending_local_asset_);
+        pending_local_asset_.clear();
+        PlayEnglishAsset(asset);
+    }
+#endif
 }
 
 void Application::ShowStartupWakeWordHint() {
@@ -1464,6 +1548,98 @@ void Application::SetAecMode(AecMode mode) {
 }
 
 void Application::PlaySound(const std::string_view& sound) { audio_service_.PlaySound(sound); }
+
+// ---------------------------------------------------------------------------
+// 英语单词学习（本地扩展应用）
+// ---------------------------------------------------------------------------
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+
+void Application::InitializeEnglishLearning() {
+    auto& learning = english_learning::EnglishLearning::GetInstance();
+
+    english_learning::EnglishLearning::Hooks hooks;
+    hooks.play_asset = [this](const std::string& asset_name) { PlayEnglishAsset(asset_name); };
+    hooks.show_card = [this](const english_learning::StudyCard& card) { ShowEnglishStudyCard(card); };
+    hooks.show_text = [](const std::string& text) {
+        auto display = Board::GetInstance().GetDisplay();
+        // 教学结束，把全屏单词卡收起来，回到普通对话界面
+        display->HideStudyCard();
+        display->SetChatMessage("assistant", text.c_str());
+    };
+    hooks.set_listening = [this](bool start) {
+        if (start) {
+            if (GetDeviceState() != kDeviceStateListening) {
+                SetDeviceState(kDeviceStateListening);
+            } else if (!audio_service_.IsAudioProcessorRunning()) {
+                StartListeningAudio();
+            }
+        }
+    };
+    hooks.suppress_server_speech = [this](bool suppress) {
+        local_learning_active_ = suppress;
+        ESP_LOGI(TAG, "server speech %s", suppress ? "suppressed" : "restored");
+    };
+    hooks.set_idle = [this](const std::string& text) {
+        auto display = Board::GetInstance().GetDisplay();
+        // 收起全屏单词卡，回到普通界面
+        display->HideStudyCard();
+        // kDeviceStateIdle 会打开唤醒词检测、关掉语音处理，也就是「等唤醒」
+        if (GetDeviceState() != kDeviceStateIdle) {
+            SetDeviceState(kDeviceStateIdle);
+        }
+        if (!text.empty()) {
+            // 待机状态会清空聊天区，所以等状态切换生效之后再把这句话放回去
+            Schedule([text]() {
+                Board::GetInstance().GetDisplay()->SetChatMessage("assistant", text.c_str());
+            });
+        }
+    };
+    learning.SetHooks(std::move(hooks));
+
+    // Tell the user right away if the pre-generated audio did not make it into
+    // the firmware; without it the lesson would be silent.
+    english_learning::LogEnglishAudioSummary();
+}
+
+void Application::HandleEnglishUserText(const std::string& text) {
+    auto& learning = english_learning::EnglishLearning::GetInstance();
+    if (!learning.HandleUserText(text)) {
+        return;
+    }
+    // The device took over this turn. If the lesson produced no audio at all
+    // (for example the asset is missing), fall back to the server so the user
+    // still gets an answer.
+    if (local_learning_active_ && !learning.active()) {
+        local_learning_active_ = false;
+    }
+}
+
+void Application::PlayEnglishAsset(const std::string& asset_name) {
+    english_learning::EnglishAudio audio;
+    if (!english_learning::GetEnglishAudio(asset_name, &audio)) {
+        ESP_LOGE(TAG, "english audio not found: %s", asset_name.c_str());
+        return;
+    }
+
+    // Local playback has to happen in the Speaking state. Otherwise the
+    // microphone keeps running and records the device's own voice.
+    if (GetDeviceState() != kDeviceStateSpeaking) {
+        pending_local_asset_ = asset_name;
+        SetDeviceState(kDeviceStateSpeaking);
+        return;  // played from HandleStateChangedEvent once the state is applied
+    }
+
+    ESP_LOGI(TAG, "play local asset %s (%u bytes)", asset_name.c_str(),
+             static_cast<unsigned>(audio.size));
+    audio_service_.PlaySound(std::string_view(audio.data, audio.size));
+}
+
+void Application::ShowEnglishStudyCard(const english_learning::StudyCard& card) {
+    Board::GetInstance().GetDisplay()->ShowStudyCard(card.unit, card.index, card.word_count,
+                                                      card.word, card.spell, card.syllable, card.zh);
+}
+
+#endif  // CONFIG_ENGLISH_LEARNING_ENABLED
 
 void Application::ResetProtocol() {
     Schedule([this]() {

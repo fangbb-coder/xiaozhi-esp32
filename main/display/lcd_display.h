@@ -34,8 +34,28 @@ protected:
     std::unique_ptr<LvglImage> preview_image_cached_ = nullptr;
     bool hide_subtitle_ = false;  // Control whether to hide chat messages/subtitles
 
+    // Study card for the local English learning extension. Created on demand.
+    lv_obj_t* study_card_ = nullptr;
+    // Content container inside the card: height follows the text and is centered,
+    // so a long line can never push the bottom line off the screen.
+    lv_obj_t* study_content_ = nullptr;
+    lv_obj_t* study_unit_label_ = nullptr;
+    lv_obj_t* study_word_label_ = nullptr;
+    lv_obj_t* study_spell_label_ = nullptr;
+    lv_obj_t* study_syllable_label_ = nullptr;
+    lv_obj_t* study_zh_label_ = nullptr;
+
     void InitializeLcdThemes();
     void ShowEmotion();
+    // Must be called with the display lock held.
+    void CreateStudyCard();
+    // 开机字体自检：把样例单词卡显示出来，逼 LVGL 真的去取位图。
+    // 背景：本板 sdkconfig 里 CONFIG_LV_USE_FONT_COMPRESSED=n，
+    // 一旦字体还是压缩位图，lv_font_get_bitmap_fmt_txt() 会直接返回 NULL，
+    // 表现就是「背景照画、字一个都不画」。自检把这问题当场暴露在开机日志里。
+    void StartStudyFontSelfTest();
+    void ShowStudySelfTestCard();
+    void HideStudySelfTestCard();
     virtual bool Lock(int timeout_ms = 0) override;
     virtual void Unlock() override;
 
@@ -48,6 +68,9 @@ public:
     ~LcdDisplay();
     virtual bool SetEmotion(const char* emotion) override;
     virtual void SetChatMessage(const char* role, const char* content) override;
+    virtual void ShowStudyCard(int unit, int index, int word_count, const char* word,
+                               const char* spell, const char* syllable, const char* zh) override;
+    virtual void HideStudyCard() override;
     virtual void RemoveChatMessage(const char* role, const char* content) override;
     virtual void ClearChatMessages() override;
     virtual void SetPreviewImage(std::unique_ptr<LvglImage> image) override;

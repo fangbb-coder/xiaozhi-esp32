@@ -10,6 +10,9 @@
 #include "application.h"
 #include "board.h"
 #include "display.h"
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+#include "english_learning/english_learning.h"
+#endif
 #include "lvgl_image.h"
 #include "lvgl_theme.h"
 #include "mcp_server.h"
@@ -455,4 +458,17 @@ void McpServer::AddUserOnlyTools() {
                         settings.SetString("download_url", url);
                         return true;
                     });
+
+    // English learning extension: list the available units. The lesson itself is
+    // driven locally from the ASR text; this tool only answers "which units are
+    // there" when the user asks in a normal conversation.
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    AddUserOnlyTool("self.english_learning.list_units",
+                    "List the English word learning units available on this device, with the "
+                    "number of words in each unit.",
+                    PropertyList(),
+                    [](const PropertyList& properties) -> ReturnValue {
+                        return english_learning::EnglishLearning::GetInstance().ListUnitsText();
+                    });
+#endif
 }

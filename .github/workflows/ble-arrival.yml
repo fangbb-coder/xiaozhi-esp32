@@ -1,0 +1,94 @@
+name: BLE Arrival
+
+# 门口迎宾（BLE 接近检测）的两条流水线：
+#   1. host-test  —— 在普通 Linux runner 上编译并运行到达判定核心的单元测试，
+#                     同时校验金标准向量可复现（防止 C 与 Python 参照实现语义漂移）。
+#   2. idf-build —— 用官方 ESP-IDF 容器编译 lckfb/szpi-esp32s3 的 lichuang-dev-ble 变体，
+#                     产出可直接烧录的 merged-binary.bin。
+#
+# 本机没有 ESP-IDF 工具链（WSL2 已损坏、没有 docker），所以固件编译走云端。
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - "ci/*"
+    paths:
+      - "main/ble_arrival/**"
+      - "test/ble_arrival/**"
+      - "main/CMakeLists.txt"
+      - "main/Kconfig.projbuild"
+      - "main/application.cc"
+      - "main/boards/lckfb/szpi-esp32s3/config.json"
+      - ".github/workflows/ble-arrival.yml"
+  pull_request:
+    paths:
+      - "main/ble_arrival/**"
+      - "test/ble_arrival/**"
+      - "main/CMakeLists.txt"
+      - "main/Kconfig.projbuild"
+      - "main/application.cc"
+      - "main/boards/lckfb/szpi-esp32s3/config.json"
+      - ".github/workflows/ble-arrival.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  host-test:
+    name: Host unit test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Compile and run arrival detector test
+        run: |
+          set -euo pipefail
+          gcc -std=c99 -Wall -Wextra -Werror -O2 \
+            -I main/ble_arrival -I test/ble_arrival \
+            test/ble_arrival/arrival_detector_test.c \
+            main/ble_arrival/arrival_detector.c \
+            -o /tmp/arrival_test
+          /tmp/arrival_test
+
+      - name: Verify golden vectors are reproducible
+        run: |
+          set -euo pipefail
+          # 金标准向量必须能用参照实现原样重新生成，
+          # 否则 C 实现和 Python 参照实现可能已经悄悄跑偏。
+          python3 test/ble_arrival/arrival_algo.py golden \
+            test/ble_arrival/data/synthetic-walk.csv \
+            --out /tmp/golden.h
+          diff -u test/ble_arrival/arrival_golden_vectors.h /tmp/golden.h
+
+      - name: Replay measured data (regression guard)
+        run: |
+          set -euo pipefail
+          python3 test/ble_arrival/arrival_algo.py replay \
+            test/ble_arrival/data/measured-scan-watch.csv \
+            --mac B0:FE:E5:F5:C5:2E
+
+  idf-build:
+    name: Build lichuang-dev-ble
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:release-v6.1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$IDF_PATH/export.sh"
+          python scripts/build.py lckfb/szpi-esp32s3 --name lichuang-dev-ble
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v7
+        with:
+          name: xiaozhi_lckfb_lichuang-dev-ble_${{ github.sha }}
+          path: build/merged-binary.bin
+          if-no-files-found: error

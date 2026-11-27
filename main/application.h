@@ -20,6 +20,9 @@
 #include "device_state.h"
 #include "device_state_machine.h"
 #include "notify/notify_player.h"
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+#include "english_learning/english_learning.h"
+#endif
 
 // Main event bits
 #define MAIN_EVENT_SCHEDULE             (1 << 0)
@@ -157,6 +160,13 @@ private:
     bool assets_version_checked_ = false;
     bool play_popup_on_listening_ = false;  // Flag to play popup sound after state changes to listening
     bool pending_listening_start_ = false;  // Waiting for playback to drain before starting listening (auto mode)
+
+    // ---- 英语学习（本地扩展应用） ----
+    // 教学期间服务端不要插话，同时本地播报要走 Speaking 状态，避免麦克风录到自己
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    bool local_learning_active_ = false;
+    std::string pending_local_asset_;  // 等待状态切到 Speaking 之后再真正播放的本地音频
+#endif
     int clock_ticks_ = 0;
     TaskHandle_t activation_task_handle_ = nullptr;
 
@@ -180,6 +190,14 @@ private:
     void StartNotification(std::string audio_url, std::vector<NotifySubtitle> subtitles);
     void StopNotification();
     void HandleNotificationFinished(uint32_t playback_id, bool success);
+
+    // ---- 英语学习 ----
+#if CONFIG_ENGLISH_LEARNING_ENABLED
+    void InitializeEnglishLearning();
+    void HandleEnglishUserText(const std::string& text);
+    void PlayEnglishAsset(const std::string& asset_name);
+    void ShowEnglishStudyCard(const english_learning::StudyCard& card);
+#endif
 
     // Activation task (runs in background)
     void ActivationTask();

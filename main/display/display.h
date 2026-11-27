@@ -49,6 +49,21 @@ public:
     // physical refresh has already completed. Callers are free to ignore the result.
     virtual bool SetEmotion(const char* emotion);
     virtual void SetChatMessage(const char* role, const char* content);
+    // Full screen study card used by the local English learning extension.
+    // Displays the English word, its letter-by-letter spelling and the Chinese
+    // meaning on separate lines. Displays without a study card ignore it.
+    virtual void ShowStudyCard(int unit, int index, int word_count, const char* word,
+                               const char* spell, const char* syllable, const char* zh) {
+        (void)unit;
+        (void)index;
+        (void)word_count;
+        (void)word;
+        (void)spell;
+        (void)syllable;
+        (void)zh;
+    }
+    // Hide the study card again and go back to the normal chat layout.
+    virtual void HideStudyCard() {}
     // Remove a matching message without clearing newer content, when supported.
     virtual void RemoveChatMessage(const char* role, const char* content) {}
     virtual void ClearChatMessages();
